@@ -212,55 +212,127 @@ struct TrainersSection: View {
 }
 
 /// I clienti seguiti, con l'aggiunta tramite codice.
+/// Un trainer con trenta clienti non può avere trenta pannelli in colonna
+/// dentro le impostazioni: si cerca per nome, si vede quanti sono, e le azioni
+/// su una persona stanno tutte nella sua scheda invece che sparse nella riga.
 struct ClientsSection: View {
     let trainer: UserAccount
 
     @EnvironmentObject private var profile: ProfileStore
     @State private var showAdd = false
-    @State private var revoking: TrainerLink?
+    @State private var search = ""
+    @State private var openClient: UserAccount?
+    @State private var expanded = true
+
+    /// Sotto questa soglia cercare è più lavoro che scorrere.
+    private let searchThreshold = 6
+
+    private var clients: [UserAccount] {
+        profile.clients(of: trainer).sorted { $0.displayName < $1.displayName }
+    }
+
+    private var filtered: [UserAccount] {
+        let query = search.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !query.isEmpty else { return clients }
+        return clients.filter { $0.displayName.lowercased().contains(query) }
+    }
 
     var body: some View {
-        let clients = profile.clients(of: trainer)
-
         VStack(alignment: .leading, spacing: 10) {
-            Text("I tuoi clienti")
-                .font(.headline)
-                .foregroundStyle(Theme.text)
-
-            if clients.isEmpty {
-                Text("Nessun cliente collegato. Chiedi il codice a chi vuoi seguire e aggiungilo qui.")
-                    .font(.footnote)
-                    .foregroundStyle(Theme.textFaint)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                ForEach(clients, id: \.id) { client in
-                    clientRow(client)
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() }
+            } label: {
+                HStack(spacing: 8) {
+                    Text("I tuoi clienti")
+                        .font(.headline)
+                        .foregroundStyle(Theme.text)
+                    if !clients.isEmpty {
+                        Text("\(clients.count)")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(Theme.textDim)
+                            .padding(.horizontal, 8)
+                            .frame(minHeight: 22)
+                            .background(Theme.surfaceHi, in: Capsule())
+                    }
+                    Spacer(minLength: 4)
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(Theme.textFaint)
                 }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
 
-            Button("＋  Aggiungi un cliente con il codice") { showAdd = true }
-                .buttonStyle(GhostButtonStyle())
-                .frame(maxWidth: .infinity)
+            if expanded {
+                if clients.isEmpty {
+                    Text("Nessun cliente collegato. Chiedi il codice a chi vuoi seguire e aggiungilo qui.")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.textFaint)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    if clients.count >= searchThreshold {
+                        searchField
+                    }
+                    ForEach(filtered, id: \.id) { client in
+                        clientRow(client)
+                    }
+                    if filtered.isEmpty {
+                        Text("Nessun cliente con questo nome.")
+                            .font(.footnote)
+                            .foregroundStyle(Theme.textFaint)
+                    }
+                }
+
+                Button("＋  Aggiungi un cliente con il codice") { showAdd = true }
+                    .buttonStyle(GhostButtonStyle())
+                    .frame(maxWidth: .infinity)
+            }
         }
         .sheet(isPresented: $showAdd) {
             AddClientSheet(trainer: trainer).environmentObject(profile)
         }
+        .sheet(item: $openClient) { client in
+            ClientSheet(trainer: trainer, client: client).environmentObject(profile)
+        }
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").foregroundStyle(Theme.textFaint)
+            TextField("Cerca un cliente", text: $search)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .foregroundStyle(Theme.text)
+            if !search.isEmpty {
+                Button { search = "" } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.textFaint)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 13)
+        .padding(.vertical, 9)
+        .background(Theme.surface, in: Capsule())
+        .overlay(Capsule().stroke(Theme.border, lineWidth: 1))
     }
 
     private func clientRow(_ client: UserAccount) -> some View {
         let accent = Color(hex: client.accentHex)
-        return Panel(padding: 13, radius: Theme.rLg) {
+        return Button {
+            openClient = client
+        } label: {
             HStack(spacing: 12) {
                 Image(systemName: client.symbolName)
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(accent)
-                    .frame(width: 38, height: 38)
+                    .frame(width: 34, height: 34)
                     .background(accent.opacity(0.12), in: Circle())
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(client.displayName)
-                        .font(.system(size: 15.5, weight: .semibold))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(client.displayName.isEmpty ? "Cliente" : client.displayName)
+                        .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Theme.text)
+                        .multilineTextAlignment(.leading)
                     Text(Fmt.plural(client.orderedRoutines.count, "scheda", "schede"))
                         .font(.caption)
                         .foregroundStyle(Theme.textFaint)
@@ -268,26 +340,114 @@ struct ClientsSection: View {
 
                 Spacer(minLength: 8)
 
-                Button {
-                    revoking = profile.linkBetween(trainer: trainer.id, client: client.id)
-                } label: {
-                    Image(systemName: "person.badge.minus")
-                        .font(.system(size: 15, weight: .semibold))
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Theme.textFaint)
+            }
+            .padding(.horizontal, 13)
+            .padding(.vertical, 10)
+            .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.rMd, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Theme.rMd, style: .continuous)
+                .stroke(Theme.border, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// Tutto quello che si fa con un cliente, in un posto solo.
+struct ClientSheet: View {
+    let trainer: UserAccount
+    let client: UserAccount
+
+    @EnvironmentObject private var profile: ProfileStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var confirmRevoke = false
+
+    private var accent: Color { Color(hex: client.accentHex) }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(spacing: 14) {
+                        Image(systemName: client.symbolName)
+                            .font(.system(size: 26, weight: .semibold))
+                            .foregroundStyle(accent)
+                            .frame(width: 58, height: 58)
+                            .background(accent.opacity(0.12), in: Circle())
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(client.displayName.isEmpty ? "Cliente" : client.displayName)
+                                .font(.system(size: 22, weight: .bold))
+                                .foregroundStyle(Theme.text)
+                            Text(Fmt.plural(client.orderedRoutines.count, "scheda", "schede"))
+                                .font(.footnote)
+                                .foregroundStyle(Theme.textDim)
+                        }
+                    }
+
+                    if client.orderedRoutines.isEmpty {
+                        Text("Non ha ancora nessuna scheda. Puoi scrivergliela tu: dalla sezione Schede scegli “per \(client.displayName)”.")
+                            .font(.footnote)
+                            .foregroundStyle(Theme.textFaint)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Le sue schede")
+                                .font(.headline)
+                                .foregroundStyle(Theme.text)
+                            ForEach(client.orderedRoutines, id: \.id) { routine in
+                                HStack(spacing: 10) {
+                                    Text(routine.emoji)
+                                    Text(routine.name)
+                                        .font(.system(size: 14.5, weight: .semibold))
+                                        .foregroundStyle(Theme.text)
+                                    Spacer(minLength: 6)
+                                    Text(Fmt.plural(routine.orderedDays.count, "giorno", "giorni"))
+                                        .font(.caption)
+                                        .foregroundStyle(Theme.textFaint)
+                                }
+                                .padding(12)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.rMd))
+                            }
+                        }
+                    }
+
+                    Button("Apri il suo profilo") {
+                        profile.viewAccount(client.id)
+                        Feedback.tap()
+                        dismiss()
+                    }
+                    .buttonStyle(PrimaryButtonStyle(accent: accent))
+                    .frame(maxWidth: .infinity)
+
+                    Text("Passi a guardare schede, recap e mappa dal suo punto di vista. Torni al tuo dalle stesse impostazioni.")
+                        .font(.caption)
                         .foregroundStyle(Theme.textFaint)
-                        .frame(width: 40, height: 40)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Button("Smetti di seguirlo") { confirmRevoke = true }
+                        .buttonStyle(GhostButtonStyle())
+                        .frame(maxWidth: .infinity)
+                        .foregroundStyle(Color(hex: "#fb7185"))
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Smetti di seguire \(client.displayName)")
+                .padding(18)
+            }
+            .pageBackground()
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Fine") { dismiss() } }
             }
         }
-        .alert("Smettere di seguire \(client.displayName)?",
-               isPresented: Binding(get: { revoking != nil },
-                                    set: { if !$0 { revoking = nil } })) {
-            Button("Annulla", role: .cancel) { revoking = nil }
+        .presentationBackground(Theme.bg)
+        .alert("Smettere di seguire \(client.displayName)?", isPresented: $confirmRevoke) {
+            Button("Annulla", role: .cancel) {}
             Button("Smetti di seguire", role: .destructive) {
-                if let revoking { try? profile.revoke(revoking) }
-                revoking = nil
+                if let link = profile.linkBetween(trainer: trainer.id, client: client.id) {
+                    try? profile.revoke(link)
+                }
                 Feedback.tap()
+                dismiss()
             }
         } message: {
             Text("Le schede che gli hai scritto restano sue. Puoi ricollegarti in futuro con un nuovo codice.")

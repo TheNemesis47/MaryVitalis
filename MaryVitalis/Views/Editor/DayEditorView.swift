@@ -61,7 +61,10 @@ struct DayEditorView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) { EditButton() }
         }
-        .onChange(of: day.name) { _, _ in
+        .onSettled(day.name) {
+            if let routine = day.routine { profile.save(routine) }
+        }
+        .onDisappear {
             if let routine = day.routine { profile.save(routine) }
         }
         .sheet(isPresented: $showPicker) {

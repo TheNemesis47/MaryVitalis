@@ -45,6 +45,7 @@ final class CloudSync: ObservableObject {
         stop()
         await pushProfile(account)
         await pullEverything(uid: uid)
+        await flushPendingUploads()
         observe(uid: uid)
     }
 
@@ -119,16 +120,61 @@ final class CloudSync: ObservableObject {
 
     // MARK: - Schede
 
+    /// Manda la scheda, e se non ci riesce se lo segna.
+    ///
+    /// Prima un fallimento finiva in una riga di log: la scheda che un trainer
+    /// aveva appena scritto per un cliente restava sul suo telefono e basta —
+    /// bastava che il collegamento non fosse ancora accettato nel momento in
+    /// cui premeva salva. Ora resta in coda e riparte da sola.
     func pushRoutine(_ routine: Routine) async {
-        guard FirebaseService.isConfigured,
-              let ownerUID = routine.owner?.firebaseUID else { return }
+        guard FirebaseService.isConfigured else { return }
+        guard let ownerUID = routine.owner?.firebaseUID else {
+            markNeedsUpload(routine, true)
+            return
+        }
         do {
             try await FirebaseService.db.collection(FirestorePath.routines)
                 .document(routine.id.uuidString)
                 .setData(RoutinePayload(routine: routine, ownerUID: ownerUID).dictionary,
                          merge: false)
+            markNeedsUpload(routine, false)
         } catch {
             lastError = error.localizedDescription
+            markNeedsUpload(routine, true)
+        }
+    }
+
+    private func markNeedsUpload(_ routine: Routine, _ pending: Bool) {
+        guard routine.needsUpload != pending else { return }
+        routine.needsUpload = pending
+        try? context.save()
+    }
+
+    private func markNeedsUpload(_ gym: Gym, _ pending: Bool) {
+        guard gym.needsUpload != pending else { return }
+        gym.needsUpload = pending
+        try? context.save()
+    }
+
+    /// Riprova quello che era rimasto indietro. Gira a ogni avvio e a ogni
+    /// ritorno in primo piano, che è quando di solito le condizioni sono
+    /// cambiate: la rete è tornata, o il cliente ha finalmente accettato.
+    func flushPendingUploads() async {
+        guard FirebaseService.isConfigured else { return }
+
+        let routines = (try? context.fetch(
+            FetchDescriptor<Routine>(predicate: #Predicate { $0.needsUpload })
+        )) ?? []
+        for routine in routines {
+            await pushRoutine(routine)
+        }
+
+        let gyms = (try? context.fetch(
+            FetchDescriptor<Gym>(predicate: #Predicate { $0.needsUpload })
+        )) ?? []
+        for gym in gyms {
+            guard let ownerUID = gym.owner?.firebaseUID else { continue }
+            await pushGym(gym, ownerUID: ownerUID)
         }
     }
 
@@ -460,7 +506,29 @@ final class CloudSync: ObservableObject {
                 }
             }
 
-        listeners = [links, clients, routines]
+        // Le sedi: una mappa assegnata da un trainer arrivava solo al riavvio
+        // dell'app, perché nessuno stava ad ascoltare. Chi la riceve deve
+        // trovarsela mentre l'app è aperta, come succede per le schede.
+        let gyms = FirebaseService.db.collection(FirestorePath.gyms)
+            .whereField("ownerId", isEqualTo: uid)
+            .addSnapshotListener { [weak self] snapshot, _ in
+                guard let self, let snapshot else { return }
+                Task { @MainActor in
+                    guard let account = self.account(firebaseUID: uid) else { return }
+                    let known = Set((account.gyms ?? []).map(\.id))
+                    for document in snapshot.documents {
+                        guard let id = (document.data()["id"] as? String)
+                            .flatMap(UUID.init(uuidString:)), !known.contains(id) else { continue }
+                        GymPayload(dictionary: document.data())
+                            .insert(owner: account, into: self.context, preservingID: true)
+                    }
+                    try? self.context.save()
+                    self.lastSync = Date()
+                    self.onRemoteChange?()
+                }
+            }
+
+        listeners = [links, clients, routines, gyms]
     }
 
     // MARK: - Applicazione in locale
@@ -834,8 +902,10 @@ extension CloudSync {
                     .document(gym.shareCode)
                     .setData(["gymId": gym.id.uuidString, "ownerId": ownerUID])
             }
+            markNeedsUpload(gym, false)
         } catch {
             lastError = error.localizedDescription
+            markNeedsUpload(gym, true)
         }
     }
 

@@ -385,6 +385,23 @@ func run() async throws {
     context.delete(lontano)
     try context.save()
 
+    print("\n[schede storiche legate all'email]")
+    let storico = try profile.register(displayName: "Samuel",
+                                       email: "arenellasamu00@gmail.com",
+                                       password: "unapassword")
+    let ritrovata = HistoricRoutines.restore(for: storico, into: context)
+    check("chi torna con la sua email ritrova la scheda", ritrovata != nil)
+    check("è la scheda giusta",
+          ritrovata?.name == RoutineFactory.templateName(for: RoutineData.samuel))
+    check("con i suoi giorni", (ritrovata?.orderedDays.count ?? 0) == 3)
+    check("non arriva due volte",
+          HistoricRoutines.restore(for: storico, into: context) == nil)
+    let estraneo = try profile.register(displayName: "Chiunque",
+                                        email: "tizio@example.com",
+                                        password: "unapassword")
+    check("a chi non c'entra non arriva niente",
+          HistoricRoutines.restore(for: estraneo, into: context) == nil)
+
     print("\n[chi compare nella scelta del profilo]")
     // Il segnaposto di un'altra persona: è così che l'app rappresenta l'altra
     // metà di un collegamento. Non è un profilo di questo telefono, e senza

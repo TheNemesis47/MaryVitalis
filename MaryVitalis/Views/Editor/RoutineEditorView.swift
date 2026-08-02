@@ -18,6 +18,12 @@ struct RoutineEditorView: View {
         routine.owner?.id != profile.signedInAccountID
     }
 
+    /// I campi di testa della scheda in un valore solo: cambia quando cambia
+    /// uno qualsiasi, ed è quello che fa da sveglia al salvataggio ritardato.
+    private var draft: [String] {
+        [routine.name, routine.emoji, routine.goal, routine.summary, routine.accentHex]
+    }
+
     var body: some View {
         List {
             if isForSomeoneElse, let owner = routine.owner {
@@ -87,11 +93,13 @@ struct RoutineEditorView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) { EditButton() }
         }
-        .onChange(of: routine.name) { _, _ in profile.save(routine) }
-        .onChange(of: routine.emoji) { _, _ in profile.save(routine) }
-        .onChange(of: routine.goal) { _, _ in profile.save(routine) }
-        .onChange(of: routine.summary) { _, _ in profile.save(routine) }
-        .onChange(of: routine.accentHex) { _, _ in profile.save(routine) }
+        // Un salvataggio quando si smette di scrivere, non uno per lettera:
+        // `profile.save` scrive su disco, avvisa tutte le viste e manda la
+        // scheda intera su Firestore.
+        .onSettled(draft) { profile.save(routine) }
+        // Chi chiude prima che scatti il ritardo non deve perdere l'ultima
+        // lettera: il salvataggio ritardato è un risparmio, non un rischio.
+        .onDisappear { profile.save(routine) }
     }
 
     private func dayRow(_ day: RoutineDay) -> some View {

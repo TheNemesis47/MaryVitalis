@@ -30,6 +30,10 @@ final class UserAccount {
     var symbolName: String = "person.crop.circle.fill"
     var accentHex: String = "#38bdf8"
     var mustChangePassword: Bool = false
+    /// `true` quando la scheda storica legata all'email è già stata consegnata:
+    /// riceverla due volte sarebbe un doppione, e riceverla di nuovo dopo
+    /// averla cancellata sarebbe peggio.
+    var hasSeenHistoricRoutine: Bool = false
     var restDefaultSeconds: Int = 90
     var createdAt: Date = Date.now
     /// Il codice che si detta a voce a un trainer perché possa scriverti la
@@ -135,6 +139,11 @@ final class Routine {
     var sortIndex: Int = 0
     var createdAt: Date = Date.now
     var updatedAt: Date = Date.now
+    /// `true` quando la copia sul cloud non è aggiornata: il caricamento è
+    /// fallito, o la scheda è nata prima che il suo proprietario avesse
+    /// un'identità cloud. Si ritenta a ogni riapertura dell'app — senza, una
+    /// scheda scritta da un trainer nel momento sbagliato non partiva mai più.
+    var needsUpload: Bool = false
 
     var owner: UserAccount?
 
@@ -368,6 +377,9 @@ final class Gym {
     var isShared: Bool = false
     /// Da dove arriva, quando è la copia della sede di qualcun altro.
     var sourceGymID: UUID?
+    /// `true` quando la copia sul cloud non è aggiornata: il caricamento è
+    /// fallito, o non c'era ancora un'identità a cui intestarla. Si ritenta.
+    var needsUpload: Bool = false
 
     var owner: UserAccount?
 

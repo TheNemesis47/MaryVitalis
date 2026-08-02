@@ -31,6 +31,15 @@ final class WorkoutStore: ObservableObject {
         }
     }
 
+    struct ProgressKey: Hashable {
+        let routineID: UUID
+        let dayID: UUID
+    }
+
+    /// Le giornate già lette dal database. Si svuota a ogni scrittura: è una
+    /// memoria di comodo per il disegno, non una seconda verità.
+    private var progressCache: [ProgressKey: [UUID: Int]] = [:]
+
     private let context: ModelContext
     private(set) var ownerAccountID: UUID?
     /// Collegato dopo l'avvio, come per `ProfileStore`.
@@ -51,6 +60,7 @@ final class WorkoutStore: ObservableObject {
     /// Rilegge quello che è cambiato sotto, senza cambiare profilo: è quello
     /// che serve quando la sincronizzazione porta storico o progressi nuovi.
     func refresh() {
+        progressCache.removeAll()
         reloadHistory()
         objectWillChange.send()
     }
@@ -58,6 +68,7 @@ final class WorkoutStore: ObservableObject {
     /// Cambia il profilo di cui si leggono progressi, storico e recupero.
     func activate(accountID: UUID?) {
         ownerAccountID = accountID
+        progressCache.removeAll()
         reloadHistory()
         if let account = activeAccount, restDefault != account.restDefaultSeconds {
             restDefault = account.restDefaultSeconds
@@ -68,8 +79,19 @@ final class WorkoutStore: ObservableObject {
     // MARK: - Progressi
 
     /// Serie completate della giornata, per identificativo di esercizio.
+    ///
+    /// Il risultato resta in memoria fino alla prossima scrittura. Non è
+    /// un'ottimizzazione di lusso: SwiftUI rivaluta il corpo di una vista molte
+    /// volte, e questa funzione veniva chiamata una volta per esercizio, per
+    /// giorno e per barra di avanzamento — ogni volta con una interrogazione
+    /// vera al database, sul thread che disegna. Da lì i secondi di blocco con
+    /// i tocchi che arrivavano tutti insieme dopo.
     func dayProgress(routineID: UUID, dayID: UUID) -> [UUID: Int] {
         guard let ownerAccountID else { return [:] }
+
+        let key = ProgressKey(routineID: routineID, dayID: dayID)
+        if let cached = progressCache[key] { return cached }
+
         let descriptor = FetchDescriptor<DayProgress>(
             predicate: #Predicate {
                 $0.ownerAccountID == ownerAccountID
@@ -78,12 +100,14 @@ final class WorkoutStore: ObservableObject {
             }
         )
         let rows = (try? context.fetch(descriptor)) ?? []
-        return Dictionary(rows.map { ($0.itemID, $0.completedSets) },
-                          uniquingKeysWith: { current, _ in current })
+        let progress = Dictionary(rows.map { ($0.itemID, $0.completedSets) },
+                                  uniquingKeysWith: { current, _ in current })
+        progressCache[key] = progress
+        return progress
     }
 
     func doneCount(routineID: UUID, dayID: UUID, itemID: UUID) -> Int {
-        record(routineID: routineID, dayID: dayID, itemID: itemID)?.completedSets ?? 0
+        dayProgress(routineID: routineID, dayID: dayID)[itemID] ?? 0
     }
 
     /// Le serie restano sempre contigue: si registra "quante ne ho fatte".
@@ -98,6 +122,7 @@ final class WorkoutStore: ObservableObject {
             let before = existing.completedSets
             existing.completedSets = next
             existing.updatedAt = .now
+            progressCache[ProgressKey(routineID: routineID, dayID: dayID)] = nil
             save()
             pushDayProgress(routineID: routineID, dayID: dayID)
             return next > before
@@ -110,6 +135,7 @@ final class WorkoutStore: ObservableObject {
             itemID: item.id,
             completedSets: next
         ))
+        progressCache[ProgressKey(routineID: routineID, dayID: dayID)] = nil
         save()
         pushDayProgress(routineID: routineID, dayID: dayID)
         return next > 0
@@ -137,6 +163,7 @@ final class WorkoutStore: ObservableObject {
         for row in (try? context.fetch(descriptor)) ?? [] {
             context.delete(row)
         }
+        progressCache[ProgressKey(routineID: routineID, dayID: dayID)] = nil
         save()
         pushDayProgress(routineID: routineID, dayID: dayID)
     }

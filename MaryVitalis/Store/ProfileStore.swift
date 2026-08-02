@@ -226,6 +226,7 @@ final class ProfileStore: ObservableObject {
 
         signIn(account: account)
         await cloud?.start(for: account)
+        await restoreHistoricRoutine(for: account)
         return account
     }
 
@@ -292,6 +293,7 @@ final class ProfileStore: ObservableObject {
 
         signIn(account: account)
         await cloud?.start(for: account)
+        await restoreHistoricRoutine(for: account)
         return account
     }
 
@@ -317,6 +319,7 @@ final class ProfileStore: ObservableObject {
             try? context.save()
             signIn(account: existing)
             await cloud?.start(for: existing)
+            await restoreHistoricRoutine(for: existing)
             return (existing, false)
         }
 
@@ -343,6 +346,7 @@ final class ProfileStore: ObservableObject {
                     await cloud.pushRoutine(routine)
                 }
             }
+            await restoreHistoricRoutine(for: local)
             return (local, false)
         }
 
@@ -352,6 +356,7 @@ final class ProfileStore: ObservableObject {
             try? context.save()
             signIn(account: fetched)
             await cloud?.start(for: fetched)
+            await restoreHistoricRoutine(for: fetched)
             return (fetched, false)
         }
 
@@ -371,7 +376,17 @@ final class ProfileStore: ObservableObject {
 
         signIn(account: account)
         await cloud?.start(for: account)
+        await restoreHistoricRoutine(for: account)
         return (account, true)
+    }
+
+    /// Consegna la scheda storica a chi entra con una delle email di allora, e
+    /// la manda sul cloud perché lo segua sugli altri dispositivi. Per tutti
+    /// gli altri non succede niente.
+    private func restoreHistoricRoutine(for account: UserAccount) async {
+        guard let routine = HistoricRoutines.restore(for: account, into: context) else { return }
+        objectWillChange.send()
+        if let cloud { await cloud.pushRoutine(routine) }
     }
 
     /// L'utente può revocare l'accesso dalle impostazioni di iOS mentre l'app è

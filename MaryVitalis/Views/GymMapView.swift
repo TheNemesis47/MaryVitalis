@@ -18,6 +18,15 @@ struct MapHighlight {
     var completedIDs: Set<String> { Set(completed.flatMap { $0.machines.map(\.id) }) }
 }
 
+/// La larghezza a disposizione della pianta, per decidere se le celle possono
+/// allargarsi o se la sala deve scorrere di lato.
+private struct PlanWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 private struct EquipmentFloorRow: Identifiable {
     let id: String
     let machines: [GymMachine?]
@@ -42,6 +51,12 @@ struct GymMapView: View {
 
     @State private var selected: GymMachine?
     @State private var searchText = ""
+    @State private var planWidth: CGFloat = 0
+
+    /// Sotto questa larghezza una postazione non si legge più: da lì in poi la
+    /// pianta scorre di lato invece di stringersi ancora.
+    private let minimumCellWidth: CGFloat = 74
+    private let aisleWidth: CGFloat = 44
 
     /// Le sedi del profilo consultato, e nient'altro: la palestra di qualcun
     /// altro non è un buon segnaposto per chi non ne ha ancora mappata una.
@@ -245,16 +260,23 @@ struct GymMapView: View {
 
     // MARK: - Piantina
 
+    /// La pianta sta in orizzontale quanto serve: con poche colonne riempie lo
+    /// schermo, con tante le celle scendono alla larghezza minima e ci si
+    /// sposta di lato invece di stringere tutto fino a non leggere più niente.
     private var floorPlan: some View {
-        LazyVStack(spacing: 0) {
-            floorPlanHeader
+        ScrollView(.horizontal, showsIndicators: planColumns > 4) {
+            LazyVStack(spacing: 0) {
+                floorPlanHeader
 
-            ForEach(Array(spatialFloorRows.enumerated()), id: \.element.id) { index, row in
-                floorRow(row, index: index)
-                    .id(row.id)
+                ForEach(Array(spatialFloorRows.enumerated()), id: \.element.id) { index, row in
+                    floorRow(row, index: index)
+                        .id(row.id)
+                }
             }
+            .padding(8)
+            .frame(width: planContentWidth)
         }
-        .padding(8)
+        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
         .background {
             FloorTexture()
                 .background(Color(hex: "#101827"))
@@ -264,53 +286,95 @@ struct GymMapView: View {
             RoundedRectangle(cornerRadius: Theme.rLg, style: .continuous)
                 .stroke(Theme.borderHi, lineWidth: 1.5)
         }
+        .background {
+            GeometryReader { proxy in
+                Color.clear.preference(key: PlanWidthKey.self, value: proxy.size.width)
+            }
+        }
+        .onPreferenceChange(PlanWidthKey.self) { planWidth = $0 }
     }
 
+    // MARK: - Misure della pianta
+
+    private var planColumns: Int { max(1, gym.columns) }
+    /// Le due metà della sala, con il corridoio in mezzo. Con una colonna sola
+    /// il corridoio non ha senso e sparisce.
+    private var leftColumns: Int { planColumns < 2 ? planColumns : planColumns / 2 }
+    private var showsAisle: Bool { planColumns >= 2 }
+
+    private var planCellWidth: CGFloat {
+        let gaps = 4 * CGFloat(max(0, planColumns - 2)) + (showsAisle ? 12 + aisleWidth : 0)
+        let available = planWidth - 16 - gaps
+        guard available > 0 else { return minimumCellWidth }
+        return max(minimumCellWidth, available / CGFloat(planColumns))
+    }
+
+    private var planContentWidth: CGFloat {
+        let gaps = 4 * CGFloat(max(0, planColumns - 2)) + (showsAisle ? 12 + aisleWidth : 0)
+        return planCellWidth * CGFloat(planColumns) + gaps + 16
+    }
+
+    @ViewBuilder
     private var floorPlanHeader: some View {
-        HStack(spacing: 6) {
-            Text("LATO SINISTRO")
-                .frame(maxWidth: .infinity)
+        if showsAisle {
+            HStack(spacing: 6) {
+                Text("LATO SINISTRO")
+                    .frame(width: planCellWidth * CGFloat(leftColumns)
+                           + 4 * CGFloat(max(0, leftColumns - 1)))
 
-            VStack(spacing: 2) {
-                Image(systemName: "arrow.up.and.down")
-                    .font(.system(size: 9, weight: .bold))
-                Text("CORRIDOIO")
-                    .font(.system(size: 6.5, weight: .black))
-                    .tracking(0.3)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+                VStack(spacing: 2) {
+                    Image(systemName: "arrow.up.and.down")
+                        .font(.system(size: 9, weight: .bold))
+                    Text("CORRIDOIO")
+                        .font(.system(size: 6.5, weight: .black))
+                        .tracking(0.3)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+                .foregroundStyle(Theme.textFaint)
+                .frame(width: aisleWidth)
+
+                Text("LATO DESTRO")
+                    .frame(maxWidth: .infinity)
             }
+            .font(.system(size: 8.5, weight: .bold))
+            .tracking(0.65)
             .foregroundStyle(Theme.textFaint)
-            .frame(width: 44)
-
-            Text("LATO DESTRO")
-                .frame(maxWidth: .infinity)
+            .frame(height: 38)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(Theme.border).frame(height: 1)
+            }
+            .accessibilityHidden(true)
         }
-        .font(.system(size: 8.5, weight: .bold))
-        .tracking(0.65)
-        .foregroundStyle(Theme.textFaint)
-        .frame(height: 38)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(Theme.border).frame(height: 1)
-        }
-        .accessibilityHidden(true)
     }
 
+    /// Una riga della sala. Il numero di colonne non è più quattro per legge:
+    /// è quello della griglia disegnata nell'editor, e il corridoio cade a
+    /// metà. Prima le posizioni oltre la quarta esistevano nei dati e non
+    /// venivano disegnate: chi allargava la sala perdeva l'ultima corsia.
     private func floorRow(_ row: EquipmentFloorRow, index: Int) -> some View {
-        HStack(spacing: 6) {
-            HStack(spacing: 4) {
-                machineSlot(row.machines[0], column: 0)
-                machineSlot(row.machines[1], column: 1)
-            }
-            .frame(maxWidth: .infinity)
+        let count = row.machines.count
+        let split = count < 2 ? count : count / 2
 
-            aisleSegment(index: index)
+        return HStack(spacing: 6) {
+            HStack(spacing: 4) {
+                ForEach(0..<split, id: \.self) { column in
+                    machineSlot(row.machines[column], column: column)
+                        .frame(width: planCellWidth)
+                }
+            }
+
+            if showsAisle {
+                aisleSegment(index: index)
+                    .frame(width: aisleWidth)
+            }
 
             HStack(spacing: 4) {
-                machineSlot(row.machines[2], column: 2)
-                machineSlot(row.machines[3], column: 3)
+                ForEach(split..<count, id: \.self) { column in
+                    machineSlot(row.machines[column], column: column)
+                        .frame(width: planCellWidth)
+                }
             }
-            .frame(maxWidth: .infinity)
         }
         .frame(height: row.height)
     }

@@ -191,6 +191,13 @@ struct GymListView: View {
     }
 }
 
+private struct GridWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 /// Disposizione degli attrezzi sulla griglia della sala.
 struct GymEditorView: View {
     @Bindable var gym: Gym
@@ -200,6 +207,9 @@ struct GymEditorView: View {
     @State private var showPicker = false
     @State private var targetCell: (row: Int, column: Int)?
     @State private var editingEquipment: GymEquipment?
+    @State private var gridWidth: CGFloat = 0
+
+    private let minimumCellWidth: CGFloat = 78
 
     /// Una riga in più in fondo: c'è sempre dove appoggiare il prossimo attrezzo
     /// senza dover prima allargare la griglia.
@@ -243,9 +253,8 @@ struct GymEditorView: View {
         .pageBackground()
         .navigationTitle("Modifica sede")
         .navigationBarTitleDisplayMode(.inline)
-        .onChange(of: gym.name) { _, _ in try? context.save() }
-        .onChange(of: gym.brand) { _, _ in try? context.save() }
-        .onChange(of: gym.city) { _, _ in try? context.save() }
+        .onSettled([gym.name, gym.brand, gym.city]) { save() }
+        .onDisappear { save() }
         .sheet(isPresented: $showPicker) {
             EquipmentPickerSheet { machine in
                 addEquipment(from: machine)
@@ -330,22 +339,54 @@ struct GymEditorView: View {
         try? context.save()
     }
 
+    /// Come la mappa: finché ci stanno, le celle riempiono la larghezza; oltre,
+    /// restano leggibili e la griglia scorre di lato.
     private var grid: some View {
-        VStack(spacing: 8) {
-            ForEach(0..<rows, id: \.self) { row in
-                HStack(spacing: 8) {
-                    ForEach(0..<columns, id: \.self) { column in
-                        cell(row: row, column: column)
+        // La mappa cella→attrezzo si costruisce una volta per disegno. Prima
+        // ogni cella chiedeva `equipment(atRow:column:)`, che riordina l'intera
+        // sala a ogni chiamata: con cento celle e cinquanta attrezzi erano
+        // cento riordinamenti per fotogramma, sul thread che disegna.
+        let placed = Dictionary(
+            gym.orderedEquipment.map { (Cell(row: $0.gridRow, column: $0.gridColumn), $0) },
+            uniquingKeysWith: { current, _ in current }
+        )
+
+        return ScrollView(.horizontal, showsIndicators: columns > 4) {
+            VStack(spacing: 8) {
+                ForEach(0..<rows, id: \.self) { row in
+                    HStack(spacing: 8) {
+                        ForEach(0..<columns, id: \.self) { column in
+                            cell(row: row, column: column,
+                                 item: placed[Cell(row: row, column: column)])
+                                .frame(width: cellWidth)
+                        }
                     }
                 }
             }
         }
+        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+        .background {
+            GeometryReader { proxy in
+                Color.clear.preference(key: GridWidthKey.self, value: proxy.size.width)
+            }
+        }
+        .onPreferenceChange(GridWidthKey.self) { gridWidth = $0 }
     }
 
-    private func cell(row: Int, column: Int) -> some View {
-        let item = gym.equipment(atRow: row, column: column)
+    private var cellWidth: CGFloat {
+        let gaps = 8 * CGFloat(max(0, columns - 1))
+        let available = gridWidth - gaps
+        guard available > 0 else { return minimumCellWidth }
+        return max(minimumCellWidth, available / CGFloat(columns))
+    }
 
-        return Button {
+    private struct Cell: Hashable {
+        let row: Int
+        let column: Int
+    }
+
+    private func cell(row: Int, column: Int, item: GymEquipment?) -> some View {
+        Button {
             if let item {
                 editingEquipment = item
             } else {

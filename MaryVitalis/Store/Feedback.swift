@@ -18,12 +18,21 @@ enum Feedback {
     static func sessionStarted() { chime([523, 784]) }
     static func waterReminder() { chime([660]) }
 
+    // I generatori si tengono: crearne uno nuovo a ogni tocco significa
+    // riaccendere il motore aptico ogni volta, e questi metodi vengono chiamati
+    // su ogni singolo tap dell'app.
+    @MainActor private static let selection = UISelectionFeedbackGenerator()
+    @MainActor private static let notification = UINotificationFeedbackGenerator()
+
+    @MainActor
     static func tap() {
-        UISelectionFeedbackGenerator().selectionChanged()
+        selection.selectionChanged()
+        selection.prepare()
     }
 
+    @MainActor
     static func success() {
-        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        notification.notificationOccurred(.success)
     }
 
     // MARK: - Sintesi delle note

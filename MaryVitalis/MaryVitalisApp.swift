@@ -37,6 +37,8 @@ struct MaryVitalisApp: App {
         _cloud = StateObject(wrappedValue: cloudSync)
     }
 
+    @Environment(\.scenePhase) private var scenePhase
+
     var body: some Scene {
         WindowGroup {
             RootView()
@@ -60,6 +62,16 @@ struct MaryVitalisApp: App {
                     if let account = profile.account, account.firebaseUID != nil {
                         await cloud.start(for: account)
                     }
+                }
+                // Riaprendo l'app si riallinea: gli ascoltatori vengono sospesi
+                // in background, e quello che è cambiato nel frattempo — una
+                // scheda scritta dal trainer, una sede assegnata — deve
+                // comparire senza dover chiudere e riaprire.
+                .onChange(of: scenePhase) { _, phase in
+                    guard phase == .active,
+                          let account = profile.account,
+                          account.firebaseUID != nil else { return }
+                    Task { await cloud.start(for: account) }
                 }
         }
         .modelContainer(container)
