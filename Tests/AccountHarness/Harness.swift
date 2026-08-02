@@ -385,6 +385,38 @@ func run() async throws {
     context.delete(lontano)
     try context.save()
 
+    print("\n[chi compare nella scelta del profilo]")
+    // Il segnaposto di un'altra persona: è così che l'app rappresenta l'altra
+    // metà di un collegamento. Non è un profilo di questo telefono, e senza
+    // password ci si entrava con un tocco.
+    let segnaposto = UserAccount(displayName: "Samuel (dal cloud)",
+                                 firebaseUID: "firebase-remote-999")
+    context.insert(segnaposto)
+    try context.save()
+    check("il segnaposto esiste fra gli account", profile.allAccounts.contains { $0.id == segnaposto.id })
+    check("ma non si può scegliere dalla schermata di accesso",
+          !profile.selectableAccounts.contains { $0.id == segnaposto.id })
+    check("e non si apre senza password", !profile.opensWithoutPassword(segnaposto))
+    check("i profili con password restano scegliibili",
+          profile.selectableAccounts.contains { $0.id == anna.id })
+    context.delete(segnaposto)
+    try context.save()
+
+    print("\n[inviti doppioni]")
+    let doppione = UserAccount(displayName: "Cliente", firebaseUID: "firebase-remote-998")
+    context.insert(doppione)
+    for _ in 0..<5 {
+        context.insert(TrainerLink(trainerAccountID: anna.id,
+                                   clientAccountID: doppione.id,
+                                   status: .pending))
+    }
+    try context.save()
+    let ripulito = ProfileStore(context: context)
+    let rimasti = (try? context.fetch(FetchDescriptor<TrainerLink>()))?
+        .filter { $0.trainerAccountID == anna.id && $0.clientAccountID == doppione.id } ?? []
+    check("fra due persone resta un legame solo", rimasti.count == 1)
+    _ = ripulito
+
     print("\n[La Birreria ricostruita]")
     let birreria = GymBirreria.insert(for: bea, into: context)
     try context.save()

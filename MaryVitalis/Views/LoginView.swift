@@ -17,7 +17,10 @@ struct LoginView: View {
     @State private var busy = false
     @FocusState private var passwordFocused: Bool
 
-    private var accounts: [UserAccount] { profile.allAccounts }
+    /// Solo i profili di questo telefono: gli account cloud si aprono con Apple
+    /// o con email e password, e i segnaposto delle altre persone non sono
+    /// profili — sono il modo in cui l'app rappresenta un collegamento.
+    private var accounts: [UserAccount] { profile.selectableAccounts }
 
     var body: some View {
         ScrollView {
@@ -242,6 +245,12 @@ struct LoginView: View {
 
         return VStack(alignment: .leading, spacing: 12) {
             Button {
+                // Un profilo senza password si apre subito: aprire un campo
+                // password che non serve a niente sarebbe solo un ostacolo.
+                guard !profile.opensWithoutPassword(account) else {
+                    attemptSignIn(account)
+                    return
+                }
                 withAnimation(.easeInOut(duration: 0.2)) {
                     if isSelected {
                         collapse()
@@ -332,11 +341,13 @@ struct LoginView: View {
     }
 
     private func attemptSignIn(_ account: UserAccount) {
-        // Un profilo senza password impostata resta accessibile senza: è il
-        // caso di chi viene da una versione che le password non le aveva.
-        let ok = CredentialStore.hasPassword(for: account.id)
-            ? profile.signIn(account: account, password: password)
-            : { profile.signIn(account: account); return true }()
+        // Un profilo **locale** senza password resta accessibile senza: è il
+        // caso di chi viene da una versione che le password non le aveva. Un
+        // account cloud no, mai: quello si apre da sopra, con Apple o con email
+        // e password.
+        let ok = profile.opensWithoutPassword(account)
+            ? { profile.signIn(account: account); return true }()
+            : profile.signIn(account: account, password: password)
 
         if ok {
             Feedback.success()

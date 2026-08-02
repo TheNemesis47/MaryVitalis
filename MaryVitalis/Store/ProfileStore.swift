@@ -27,6 +27,7 @@ final class ProfileStore: ObservableObject {
     init(context: ModelContext) {
         self.context = context
         Self.backfillInviteCodes(in: context)
+        Self.collapseDuplicateLinks(in: context)
 
         let restored = SecureSessionStore.loadAccountID()
         let account = restored.flatMap { Self.account(id: $0, in: context) }
@@ -59,6 +60,24 @@ final class ProfileStore: ObservableObject {
         ))) ?? []
     }
 
+    /// I profili che si possono scegliere dalla schermata di accesso.
+    ///
+    /// **Non** tutti quelli nel database. Per rappresentare un collegamento
+    /// serve una copia locale dell'altra persona — il cliente sul telefono del
+    /// trainer, il trainer su quello del cliente — e quei segnaposto finivano
+    /// nell'elenco dei profili. Siccome un segnaposto non ha una password sul
+    /// Portachiavi, ci si entrava **senza niente**: bastava avere in mano il
+    /// telefono per aprire il profilo di un'altra persona e vederci dentro le
+    /// sue schede e le sue richieste.
+    ///
+    /// Restano fuori anche gli account cloud veri: quelli si aprono con Apple o
+    /// con email e password, che è tutto il senso di avere un'identità.
+    var selectableAccounts: [UserAccount] {
+        allAccounts.filter { account in
+            CredentialStore.hasPassword(for: account.id) || account.firebaseUID == nil
+        }
+    }
+
     /// I profili che l'account connesso può consultare: se stesso, più i
     /// clienti assegnati se è un trainer, tutti se è admin.
     var visibleAccounts: [UserAccount] {
@@ -86,6 +105,16 @@ final class ProfileStore: ObservableObject {
         guard CredentialStore.verify(password, for: account.id) else { return false }
         signIn(account: account)
         return true
+    }
+
+    /// `true` se questo profilo si apre digitando soltanto il suo nome.
+    ///
+    /// Vale per i profili nati su questo telefono prima delle password. Un
+    /// account cloud non ci rientra mai: la sua identità sta altrove, e senza
+    /// questo controllo il segnaposto di un'altra persona si sarebbe aperto
+    /// con un tocco.
+    func opensWithoutPassword(_ account: UserAccount) -> Bool {
+        account.firebaseUID == nil && !CredentialStore.hasPassword(for: account.id)
     }
 
     func viewAccount(_ accountID: UUID) {
@@ -675,6 +704,29 @@ final class ProfileStore: ObservableObject {
             account.inviteCode = InviteCode.generate()
         }
         try? context.save()
+    }
+
+    /// Fra due persone il legame è **uno**. Le versioni fino alla build 6 ne
+    /// inserivano uno nuovo a ogni richiesta rimandata, e chi le riceveva si
+    /// ritrovava sette inviti dalla stessa persona. Ne resta il più recente.
+    private static func collapseDuplicateLinks(in context: ModelContext) {
+        let descriptor = FetchDescriptor<TrainerLink>(
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+        let links = (try? context.fetch(descriptor)) ?? []
+        var seen: Set<String> = []
+        var removed = false
+
+        for link in links {
+            let pair = "\(link.trainerAccountID)-\(link.clientAccountID)"
+            if seen.contains(pair) {
+                context.delete(link)
+                removed = true
+            } else {
+                seen.insert(pair)
+            }
+        }
+        if removed { try? context.save() }
     }
 
     private static func account(id: UUID, in context: ModelContext) -> UserAccount? {
