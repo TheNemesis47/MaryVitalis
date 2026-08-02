@@ -1,0 +1,166 @@
+rules_version = '2';
+
+// Regole di sicurezza di Firestore per Mary Vitalis.
+//
+// Sono l'unica cosa che impedisce a un utente di leggere le schede e lo storico
+// di un altro: il client non è mai una difesa, chiunque può parlare con l'API
+// direttamente. Ogni permesso qui dentro va letto come "questo è pubblico per
+// chi soddisfa la condizione".
+//
+// Da pubblicare con:  firebase deploy --only firestore:rules
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- Funzioni di appoggio ----------
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    // L'identificativo del legame è deterministico — "<trainer>_<cliente>" —
+    // così si può verificarne l'esistenza senza doverlo cercare.
+    function linkId(trainerId, clientId) {
+      return trainerId + '_' + clientId;
+    }
+
+    function linkDoc(trainerId, clientId) {
+      return get(/databases/$(database)/documents/trainerLinks/$(linkId(trainerId, clientId)));
+    }
+
+    function linkAccepted(trainerId, clientId) {
+      return exists(/databases/$(database)/documents/trainerLinks/$(linkId(trainerId, clientId)))
+        && linkDoc(trainerId, clientId).data.status == 'accepted';
+    }
+
+    // Un trainer accede ai dati del cliente solo con un legame accettato.
+    // Il consenso non è un dettaglio: sono dati di salute di un'altra persona.
+    function isSelfOrAcceptedTrainer(ownerId) {
+      return isSelf(ownerId) || linkAccepted(request.auth.uid, ownerId);
+    }
+
+    // ---------- Profili ----------
+
+    match /users/{userId} {
+      // Il proprio profilo si legge sempre; quello altrui solo se lo si segue.
+      allow read: if isSelfOrAcceptedTrainer(userId);
+
+      // Il profilo lo scrive solo il proprietario, e non può cambiare
+      // identificativo né promuoversi da solo ad admin.
+      allow create: if isSelf(userId)
+        && request.resource.data.role in ['member', 'trainer'];
+      allow update: if isSelf(userId)
+        && request.resource.data.role == resource.data.role;
+      allow delete: if isSelf(userId);
+    }
+
+    // Il codice invito vive in una collezione separata, non dentro il profilo:
+    // per collegarsi bisogna poterlo cercare, e non si vuole rendere leggibile
+    // l'intero profilo a chiunque tiri a indovinare un codice.
+    //
+    // Restituisce soltanto l'identificativo del proprietario: chi conosce il
+    // codice scopre che esiste qualcuno, non chi è. Il nome compare al cliente
+    // insieme alla richiesta, ed è lui a decidere.
+    match /inviteCodes/{code} {
+      allow read: if signedIn();
+
+      // Un codice libero lo può prendere chiunque, ma solo per sé.
+      allow create: if signedIn()
+        && request.resource.data.userId == request.auth.uid;
+
+      // Modificare o liberare un codice richiede di possederlo **già**.
+      // Guardare solo il documento in arrivo non basta: chiunque potrebbe
+      // riscrivere il codice di un altro puntandolo a sé, e da quel momento il
+      // trainer che digita quel codice si collegherebbe alla persona sbagliata.
+      allow update: if signedIn()
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.userId == request.auth.uid;
+
+      // In cancellazione `request.resource` non esiste: si guarda il documento
+      // che c'è, altrimenti la regola non passerebbe mai.
+      allow delete: if signedIn()
+        && resource.data.userId == request.auth.uid;
+    }
+
+    // ---------- Legame trainer ↔ cliente ----------
+
+    match /trainerLinks/{linkKey} {
+      allow read: if signedIn()
+        && (request.auth.uid == resource.data.trainerId
+            || request.auth.uid == resource.data.clientId);
+
+      // Il trainer può solo *chiedere*: nasce in sospeso, mai già accettato.
+      allow create: if signedIn()
+        && request.auth.uid == request.resource.data.trainerId
+        && request.resource.data.status == 'pending'
+        && linkKey == linkId(request.resource.data.trainerId, request.resource.data.clientId)
+        && request.resource.data.trainerId != request.resource.data.clientId;
+
+      // Accettare tocca solo al cliente. Revocare a entrambi.
+      allow update: if signedIn()
+        && request.resource.data.trainerId == resource.data.trainerId
+        && request.resource.data.clientId == resource.data.clientId
+        && (
+          (request.auth.uid == resource.data.clientId
+            && request.resource.data.status in ['accepted', 'revoked'])
+          || (request.auth.uid == resource.data.trainerId
+            && request.resource.data.status == 'revoked')
+        );
+
+      allow delete: if signedIn()
+        && (request.auth.uid == resource.data.clientId
+            || request.auth.uid == resource.data.trainerId);
+    }
+
+    // ---------- Schede ----------
+
+    // È qui che il trainer scrive: la scheda appartiene al cliente
+    // (`ownerId`), ma la può modificare anche chi lo segue.
+    //
+    // Giorni ed esercizi sono array dentro il documento, non sottocollezioni:
+    // una scheda si legge sempre intera, pesa pochi kilobyte, e la modifica del
+    // trainer arriva al cliente tutta insieme invece che a pezzi.
+    match /routines/{routineId} {
+      allow read: if isSelfOrAcceptedTrainer(resource.data.ownerId);
+      allow create: if isSelfOrAcceptedTrainer(request.resource.data.ownerId);
+      allow update: if isSelfOrAcceptedTrainer(resource.data.ownerId)
+        && request.resource.data.ownerId == resource.data.ownerId;
+      // Cancellare la scheda di qualcun altro no: al massimo si smette di seguirlo.
+      allow delete: if isSelf(resource.data.ownerId);
+    }
+
+    // ---------- Storico e progressi ----------
+
+    // Il trainer li legge — servono a capire come sta andando — ma non li
+    // scrive: quello che hai fatto in palestra lo registri solo tu.
+    match /sessions/{sessionId} {
+      allow read: if isSelfOrAcceptedTrainer(resource.data.ownerId);
+      allow create: if isSelf(request.resource.data.ownerId);
+      allow update, delete: if isSelf(resource.data.ownerId);
+    }
+
+    match /progress/{progressId} {
+      allow read: if isSelfOrAcceptedTrainer(resource.data.ownerId);
+      allow create: if isSelf(request.resource.data.ownerId);
+      allow update, delete: if isSelf(resource.data.ownerId);
+    }
+
+    // ---------- Palestre ----------
+
+    match /gyms/{gymId} {
+      allow read: if isSelfOrAcceptedTrainer(resource.data.ownerId);
+      allow create: if isSelf(request.resource.data.ownerId);
+      allow update, delete: if isSelf(resource.data.ownerId);
+    }
+
+    // Tutto il resto è chiuso. Le regole non hanno un "default consentito":
+    // quello che non è scritto sopra non si può fare, ed è giusto così.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

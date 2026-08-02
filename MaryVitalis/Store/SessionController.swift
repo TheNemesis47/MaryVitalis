@@ -46,7 +46,8 @@ final class SessionController: ObservableObject {
     // MARK: - Ciclo di vita
 
     func start(date: String,
-               routineID: String,
+               routineID: UUID,
+               dayID: UUID,
                routineName: String,
                userName: String,
                dayIndex: Int,
@@ -67,6 +68,7 @@ final class SessionController: ObservableObject {
             attributes: WorkoutActivityAttributes(
                 sessionID: newSessionID,
                 routineID: routineID,
+                dayID: dayID,
                 routineName: routineName,
                 userName: userName,
                 dayIndex: dayIndex,

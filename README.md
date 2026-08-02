@@ -52,12 +52,20 @@ Live Activity è condiviso tra app ed estensione tramite App Group.
 
 ### Account, ruoli e recap
 
-La build TestFlight usa per ora un accesso locale: l'identificativo della
-sessione viene conservato nel Portachiavi di iOS, mentre non esistono password
-locali. Samuel e Raffaele sono utenti normali; Maria Pia è trainer di Samuel e
-Raffaele e può consultare i loro profili; il ruolo admin può consultare tutti.
-Schede, preferenza di recupero, widget e recap seguono il profilo consultato.
-Un login reale multi-dispositivo richiederà un backend e token server-side.
+L'accesso è a **profili locali**: più persone sullo stesso iPhone, ognuna con la
+propria password. Password e salt stanno nel Portachiavi di iOS come hash
+PBKDF2-SHA256, mai nel database; l'identificativo della sessione attiva è
+anch'esso nel Portachiavi. Samuel e Raffaele sono utenti normali; Maria Pia è
+trainer di Samuel e Raffaele e può consultare i loro profili; il ruolo admin può
+consultare tutti. Schede, preferenza di recupero, widget e recap seguono il
+profilo consultato.
+
+Chi è connesso e di chi si guardano i dati sono due cose distinte: un trainer
+resta se stesso mentre consulta il profilo di un cliente.
+
+Un login multi-dispositivo con password richiede un backend. La sincronizzazione
+fra i propri dispositivi passerà invece da Sign in with Apple e CloudKit: vedi
+`docs/PIANO_MULTIUTENTE.md`.
 
 ### Widget e utente attivo
 
@@ -106,20 +114,25 @@ le tre macchine cardio non ricordate.
 ```
 MaryVitalis/
   MaryVitalisApp.swift
+  Data/
+    Models.swift            i modelli SwiftData (account, schede, sessioni, palestre)
+    AppDatabase.swift       ModelContainer, pronto per CloudKit
+    LegacyMigrator.swift    porta i dati da UserDefaults a SwiftData, una volta sola
+    SeedRoutines.swift      le 3 schede storiche, sorgente della migrazione
   Model/
     Exercise.swift          voce del database
-    AppAccount.swift        account locali, ruoli e assegnazioni trainer
-    Routine.swift           schede, giorni, parsing di "4 serie x 12"
-    RoutineData.swift       le 3 schede
+    UserRole.swift          ruoli utente, trainer e admin
+    Routine.swift           lettura del vecchio formato "4 serie x 12" e statistiche
     GymLocation.swift       catalogo sedi, zone e selezione palestra
     GymMachine.swift        identità, muscoli e posizione di un attrezzo
     GymMapData.swift        rilievo FitActive Napoli Birreria + query esercizi
     Formatters.swift        date italiane, cronometro, medie
   Store/
     ExerciseLibrary.swift   carica exercises.json fuori dal main thread
-    ProfileStore.swift      utente selezionato condiviso con i widget
-    SecureSessionStore.swift sessione locale nel Portachiavi iOS
-    WorkoutStore.swift      progressi e storico persistiti
+    ProfileStore.swift      chi è connesso e di chi si guardano i dati
+    SecureSessionStore.swift sessione attiva nel Portachiavi iOS
+    CredentialStore.swift   password dei profili locali (PBKDF2 + Portachiavi)
+    WorkoutStore.swift      progressi e storico del profilo consultato
     SessionController.swift cronometro, recupero, acqua e Live Activity
     WorkoutActivityManager.swift  ciclo di vita ActivityKit
     Feedback.swift          suono sintetizzato + haptics
@@ -147,7 +160,8 @@ in bundle: vengono caricate a runtime dallo stesso repo usato dal sito
 (`raw.githubusercontent.com/hasaneyldrm/exercises-dataset`), quindi la griglia
 esercizi ha bisogno di rete. Media © Gym Visual.
 
-Per aggiungere una scheda basta un nuovo `Routine` in `RoutineData.all`. Se
-introduce esercizi nuovi, aggiungi la riga corrispondente in
-`GymMap.queryToMachines` perché la sede sappia quale pin accendere
-(altrimenti interviene l'euristica su attrezzo/nome).
+Le schede vivono nel database, non più nel codice: si aggiungono dall'app.
+`Data/SeedRoutines.swift` conserva le tre schede storiche solo come sorgente
+della migrazione. Se una scheda introduce esercizi nuovi, aggiungi la riga
+corrispondente in `GymMap.queryToMachines` perché la sede sappia quale pin
+accendere (altrimenti interviene l'euristica su attrezzo/nome).

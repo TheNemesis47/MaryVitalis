@@ -6,10 +6,11 @@ struct MachineDetailView: View {
     let gym: GymLocation
 
     @EnvironmentObject private var library: ExerciseLibrary
+    @EnvironmentObject private var profile: ProfileStore
     @Environment(\.dismiss) private var dismiss
     @State private var detail: ExerciseDetail?
 
-    private var zone: GymZone? { gym.zone(for: machine) }
+    private var zone: GymZoneFrame? { gym.zone(for: machine) }
 
     var body: some View {
         ScrollView {
@@ -254,11 +255,13 @@ struct MachineDetailView: View {
             .tint(color)
     }
 
+    /// Gli esercizi delle schede del profilo consultato che si fanno su questo
+    /// attrezzo. Prima leggeva le tre schede cablate nel codice.
     private var relatedExercises: [Exercise] {
-        let queries = RoutineData.all
-            .flatMap(\.days)
-            .flatMap(\.exercises)
-            .map(\.query)
+        let queries = profile.visibleRoutines
+            .flatMap(\.orderedDays)
+            .flatMap(\.orderedItems)
+            .map(\.exerciseQuery)
 
         var seen = Set<String>()
         var result: [Exercise] = []

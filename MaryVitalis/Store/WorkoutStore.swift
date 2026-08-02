@@ -1,181 +1,222 @@
-import Foundation
 import Combine
+import Foundation
+import SwiftData
 import WidgetKit
 
-/// Una sessione conclusa e finita nello storico.
-struct HistoryEntry: Identifiable, Codable, Hashable {
-    let id: String
-    let routineId: String
-    let routineName: String
-    let accentHex: String
-    let dayIndex: Int
-    let dayName: String
-    /// Giorno scelto sul calendario, formato YYYY-MM-DD.
-    let date: String
-    let duration: Double
-    let sets: Int
-    let setsDone: Int
-    let sips: Int
-    let effort: Int?
-}
-
-/// Progressi e storico, salvati sul dispositivo come faceva `localStorage`.
+/// Progressi e storico del profilo consultato.
+///
+/// Ogni scrittura è legata a un `ownerAccountID` esplicito. Prima i progressi
+/// erano indicizzati per identificativo di *scheda*, il che funzionava soltanto
+/// finché ogni persona aveva esattamente una scheda con il proprio nome.
+@MainActor
 final class WorkoutStore: ObservableObject {
-    /// [idScheda: [indiceGiorno: [indiceEsercizio: serie completate]]]
-    @Published private(set) var progress: [String: [Int: [Int: Int]]] = [:]
-    @Published private(set) var history: [HistoryEntry] = []
-    @Published var restDefault: Int = WorkoutStore.defaultRest {
-        didSet { defaults.set(restDefault, forKey: restKey(for: activeUserID)) }
-    }
-
     static let restOptions = [45, 60, 90, 120]
     static let defaultRest = 90
     static let waterInterval: TimeInterval = 10 * 60
     static let sipsSuggested = 3
 
-    private enum Keys {
-        static let progress = "mv:progress"
-        static let history = "mv:history"
-        static let legacyRest = "mv:rest-default"
-        static let restPrefix = "mv:rest-default:"
-    }
+    /// Lo storico del profilo attivo, dal più recente al più vecchio.
+    @Published private(set) var history: [WorkoutSession] = []
 
-    private let defaults = UserDefaults.standard
-    private var activeUserID = RoutineData.samuel.id
-
-    init() {
-        if let data = defaults.data(forKey: Keys.progress),
-           let decoded = try? JSONDecoder().decode([String: [String: [String: Int]]].self, from: data) {
-            progress = decoded.mapValues { days in
-                Dictionary(uniqueKeysWithValues: days.compactMap { key, value -> (Int, [Int: Int])? in
-                    guard let dayIndex = Int(key) else { return nil }
-                    let exercises = Dictionary(uniqueKeysWithValues: value.compactMap { k, v -> (Int, Int)? in
-                        guard let i = Int(k) else { return nil }
-                        return (i, v)
-                    })
-                    return (dayIndex, exercises)
-                })
+    @Published var restDefault: Int = WorkoutStore.defaultRest {
+        didSet {
+            let clamped = min(600, max(15, restDefault))
+            if clamped != restDefault {
+                restDefault = clamped
+                return
             }
+            guard let account = activeAccount, account.restDefaultSeconds != clamped else { return }
+            account.restDefaultSeconds = clamped
+            save()
         }
-        if let data = defaults.data(forKey: Keys.history),
-           let decoded = try? JSONDecoder().decode([HistoryEntry].self, from: data) {
-            history = decoded
+    }
+
+    private let context: ModelContext
+    private(set) var ownerAccountID: UUID?
+
+    init(context: ModelContext) {
+        self.context = context
+        activate(accountID: MaryVitalisShared.activeAccountID)
+    }
+
+    private var activeAccount: UserAccount? {
+        guard let ownerAccountID else { return nil }
+        var descriptor = FetchDescriptor<UserAccount>(predicate: #Predicate { $0.id == ownerAccountID })
+        descriptor.fetchLimit = 1
+        return try? context.fetch(descriptor).first
+    }
+
+    /// Cambia il profilo di cui si leggono progressi, storico e recupero.
+    func activate(accountID: UUID?) {
+        ownerAccountID = accountID
+        reloadHistory()
+        if let account = activeAccount, restDefault != account.restDefaultSeconds {
+            restDefault = account.restDefaultSeconds
         }
-        let selected = MaryVitalisShared.selectedUserID
-        activeUserID = RoutineData.routine(id: selected) == nil ? RoutineData.samuel.id : selected
-        restDefault = storedRest(for: activeUserID)
-        publishWidgetSnapshot(selectedUserID: MaryVitalisShared.selectedUserID)
-    }
-
-    func activateUser(_ userID: String) {
-        guard RoutineData.routine(id: userID) != nil else { return }
-        activeUserID = userID
-        restDefault = storedRest(for: userID)
-        publishWidgetSnapshot(selectedUserID: userID)
-    }
-
-    private func storedRest(for userID: String) -> Int {
-        let value = defaults.object(forKey: restKey(for: userID)) as? Int
-            ?? defaults.object(forKey: Keys.legacyRest) as? Int
-            ?? WorkoutStore.defaultRest
-        return min(600, max(15, value))
-    }
-
-    private func restKey(for userID: String) -> String {
-        Keys.restPrefix + userID
+        publishWidgetSnapshot()
     }
 
     // MARK: - Progressi
 
-    func dayProgress(routineId: String, day: Int) -> [Int: Int] {
-        progress[routineId]?[day] ?? [:]
+    /// Serie completate della giornata, per identificativo di esercizio.
+    func dayProgress(routineID: UUID, dayID: UUID) -> [UUID: Int] {
+        guard let ownerAccountID else { return [:] }
+        let descriptor = FetchDescriptor<DayProgress>(
+            predicate: #Predicate {
+                $0.ownerAccountID == ownerAccountID
+                    && $0.routineID == routineID
+                    && $0.dayID == dayID
+            }
+        )
+        let rows = (try? context.fetch(descriptor)) ?? []
+        return Dictionary(rows.map { ($0.itemID, $0.completedSets) },
+                          uniquingKeysWith: { current, _ in current })
     }
 
-    func doneCount(routineId: String, day: Int, exercise: Int) -> Int {
-        dayProgress(routineId: routineId, day: day)[exercise] ?? 0
+    func doneCount(routineID: UUID, dayID: UUID, itemID: UUID) -> Int {
+        record(routineID: routineID, dayID: dayID, itemID: itemID)?.completedSets ?? 0
     }
 
     /// Le serie restano sempre contigue: si registra "quante ne ho fatte".
-    /// Ritorna `true` se il conteggio è aumentato (serve per far partire il recupero).
+    /// Ritorna `true` se il conteggio è aumentato, così il chiamante sa se far
+    /// partire il recupero.
     @discardableResult
-    func setDone(routineId: String, day: Int, exercise: Int, count: Int, maxSets: Int) -> Bool {
-        let before = doneCount(routineId: routineId, day: day, exercise: exercise)
-        let next = max(0, min(count, maxSets))
+    func setDone(routineID: UUID, dayID: UUID, item: RoutineItem, count: Int) -> Bool {
+        guard let ownerAccountID else { return false }
+        let next = max(0, min(count, item.sets))
 
-        var routine = progress[routineId] ?? [:]
-        var dayMap = routine[day] ?? [:]
-        dayMap[exercise] = next
-        routine[day] = dayMap
-        progress[routineId] = routine
-        persistProgress()
+        if let existing = record(routineID: routineID, dayID: dayID, itemID: item.id) {
+            let before = existing.completedSets
+            existing.completedSets = next
+            existing.updatedAt = .now
+            save()
+            return next > before
+        }
 
-        return next > before
+        context.insert(DayProgress(
+            ownerAccountID: ownerAccountID,
+            routineID: routineID,
+            dayID: dayID,
+            itemID: item.id,
+            completedSets: next
+        ))
+        save()
+        return next > 0
     }
 
-    func resetDay(routineId: String, day: Int) {
-        progress[routineId]?[day] = nil
-        persistProgress()
+    func resetDay(routineID: UUID, dayID: UUID) {
+        guard let ownerAccountID else { return }
+        let descriptor = FetchDescriptor<DayProgress>(
+            predicate: #Predicate {
+                $0.ownerAccountID == ownerAccountID
+                    && $0.routineID == routineID
+                    && $0.dayID == dayID
+            }
+        )
+        for row in (try? context.fetch(descriptor)) ?? [] {
+            context.delete(row)
+        }
+        save()
     }
 
-    func stats(routine: Routine, day: Int) -> DayStats {
-        DayStats(day: routine.days[day], progress: dayProgress(routineId: routine.id, day: day))
+    func stats(routine: Routine, dayIndex: Int) -> DayStats {
+        let days = routine.orderedDays
+        guard days.indices.contains(dayIndex) else { return DayStats(day: nil, progress: [:]) }
+        let day = days[dayIndex]
+        return DayStats(day: day, progress: dayProgress(routineID: routine.id, dayID: day.id))
     }
 
     func completedDays(routine: Routine) -> Int {
-        routine.days.indices.filter { stats(routine: routine, day: $0).isComplete }.count
+        routine.orderedDays.indices.filter { stats(routine: routine, dayIndex: $0).isComplete }.count
     }
 
-    private func persistProgress() {
-        let encodable = progress.mapValues { days in
-            Dictionary(uniqueKeysWithValues: days.map { day, exercises in
-                (String(day), Dictionary(uniqueKeysWithValues: exercises.map { (String($0.key), $0.value) }))
-            })
-        }
-        if let data = try? JSONEncoder().encode(encodable) {
-            defaults.set(data, forKey: Keys.progress)
-        }
+    private func record(routineID: UUID, dayID: UUID, itemID: UUID) -> DayProgress? {
+        guard let ownerAccountID else { return nil }
+        var descriptor = FetchDescriptor<DayProgress>(
+            predicate: #Predicate {
+                $0.ownerAccountID == ownerAccountID
+                    && $0.routineID == routineID
+                    && $0.dayID == dayID
+                    && $0.itemID == itemID
+            }
+        )
+        descriptor.fetchLimit = 1
+        return try? context.fetch(descriptor).first
     }
 
     // MARK: - Storico
 
-    func addHistory(_ entry: HistoryEntry) {
-        history.append(entry)
-        persistHistory()
-        publishWidgetSnapshot(selectedUserID: MaryVitalisShared.selectedUserID)
+    func addSession(routine: Routine,
+                    day: RoutineDay,
+                    dayIndex: Int,
+                    dateKey: String,
+                    duration: Double,
+                    stats: DayStats,
+                    sips: Int,
+                    effort: Int?) {
+        guard let ownerAccountID else { return }
+        context.insert(WorkoutSession(
+            ownerAccountID: ownerAccountID,
+            routineID: routine.id,
+            routineName: routine.name,
+            accentHex: routine.accentHex,
+            dayIndex: dayIndex,
+            dayName: day.name,
+            dateKey: dateKey,
+            duration: duration,
+            sets: stats.sets,
+            setsDone: stats.setsDone,
+            sips: sips,
+            effort: effort
+        ))
+        save()
+        reloadHistory()
+        publishWidgetSnapshot()
     }
 
-    func clearHistory(userID: String) {
-        history.removeAll { $0.routineId == userID }
-        persistHistory()
-        publishWidgetSnapshot(selectedUserID: userID)
-    }
-
-    private func persistHistory() {
-        if let data = try? JSONEncoder().encode(history) {
-            defaults.set(data, forKey: Keys.history)
+    func clearHistory() {
+        for session in history {
+            context.delete(session)
         }
+        save()
+        reloadHistory()
+        publishWidgetSnapshot()
     }
 
     /// Pallini colorati per il calendario del profilo: [iso: [colori]].
-    func calendarMarks(userID: String) -> [String: [String]] {
-        history.filter { $0.routineId == userID }.reduce(into: [String: [String]]()) { acc, entry in
-            acc[entry.date, default: []].append(entry.accentHex)
+    func calendarMarks() -> [String: [String]] {
+        history.reduce(into: [String: [String]]()) { acc, session in
+            acc[session.dateKey, default: []].append(session.accentHex)
         }
+    }
+
+    private func reloadHistory() {
+        guard let ownerAccountID else {
+            history = []
+            return
+        }
+        let descriptor = FetchDescriptor<WorkoutSession>(
+            predicate: #Predicate { $0.ownerAccountID == ownerAccountID },
+            sortBy: [SortDescriptor(\.dateKey, order: .reverse)]
+        )
+        history = (try? context.fetch(descriptor)) ?? []
     }
 
     // MARK: - Widget e comandi dalla Lock Screen
 
-    func publishWidgetSnapshot(selectedUserID: String) {
-        guard let user = RoutineData.routine(id: selectedUserID) else { return }
-        let lastWorkout = history
-            .filter { $0.routineId == selectedUserID }
-            .map { DateKey.date(from: $0.date) }
-            .max()
+    func publishWidgetSnapshot() {
+        guard let account = activeAccount else {
+            MaryVitalisShared.saveSnapshot(.placeholder)
+            WidgetCenter.shared.reloadTimelines(ofKind: MaryVitalisShared.streakWidgetKind)
+            return
+        }
+
+        let lastWorkout = history.map { DateKey.date(from: $0.dateKey) }.max()
 
         MaryVitalisShared.saveSnapshot(WorkoutWidgetSnapshot(
-            userID: user.id,
-            userName: user.name,
-            accentHex: user.accentHex,
+            accountID: account.id,
+            userName: account.displayName,
+            accentHex: account.accentHex,
             lastWorkoutDate: lastWorkout,
             updatedAt: Date()
         ))
@@ -183,29 +224,28 @@ final class WorkoutStore: ObservableObject {
     }
 
     /// Applica i tocchi fatti sulla Live Activity mentre l'app era sospesa.
-    /// I comandi non appartenenti a questa sessione restano nella coda condivisa.
+    /// I comandi di altre sessioni restano nella coda condivisa.
+    ///
+    /// La validazione ora avviene contro i dati reali della scheda: prima
+    /// passava da `RoutineData.routine(id:)`, cioè da un enum compilato che con
+    /// schede create dagli utenti non esiste più.
     @discardableResult
     func consumeWidgetCommands(sessionID: String,
-                               routineID: String,
-                               dayIndex: Int) -> [WorkoutWidgetCommand] {
+                               routineID: UUID,
+                               dayID: UUID) -> [WorkoutWidgetCommand] {
         let commands = MaryVitalisShared.consumeCommands(sessionID: sessionID)
 
         for command in commands
-        where command.routineID == routineID && command.dayIndex == dayIndex {
+        where command.routineID == routineID && command.dayID == dayID {
             switch command.kind {
             case .setDone:
-                guard let exerciseIndex = command.exerciseIndex,
+                guard let itemID = command.itemID,
                       let completedSets = command.completedSets,
-                      let routine = RoutineData.routine(id: routineID),
-                      routine.days.indices.contains(dayIndex),
-                      routine.days[dayIndex].exercises.indices.contains(exerciseIndex) else { continue }
-                let plan = routine.days[dayIndex].exercises[exerciseIndex].plan
-                setDone(routineId: routineID, day: dayIndex, exercise: exerciseIndex,
-                        count: completedSets, maxSets: plan.sets)
+                      let item = item(id: itemID) else { continue }
+                setDone(routineID: routineID, dayID: dayID, item: item, count: completedSets)
 
             case .restPreference:
-                if let seconds = command.restSeconds,
-                   WorkoutStore.restOptions.contains(seconds) {
+                if let seconds = command.restSeconds, WorkoutStore.restOptions.contains(seconds) {
                     restDefault = seconds
                 }
 
@@ -215,5 +255,19 @@ final class WorkoutStore: ObservableObject {
         }
 
         return commands
+    }
+
+    private func item(id: UUID) -> RoutineItem? {
+        var descriptor = FetchDescriptor<RoutineItem>(predicate: #Predicate { $0.id == id })
+        descriptor.fetchLimit = 1
+        return try? context.fetch(descriptor).first
+    }
+
+    private func save() {
+        do {
+            try context.save()
+        } catch {
+            context.rollback()
+        }
     }
 }

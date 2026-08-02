@@ -11,15 +11,16 @@ struct RecapView: View {
 
     private var weekStart: Date { DateKey.adding(days: weekOffset * 7, to: DateKey.startOfWeek(Date())) }
     private var weekEnd: Date { DateKey.adding(days: 6, to: weekStart) }
-    private var routine: Routine { profile.selectedRoutine }
-    private var history: [HistoryEntry] {
-        store.history.filter { $0.routineId == profile.selectedUserID }
-    }
-    private var sortedHistory: [HistoryEntry] { history.sorted { $0.date < $1.date } }
+    /// Lo storico arriva già filtrato sul profilo consultato: non si filtra più
+    /// per identificativo di scheda, che con più schede a testa non funziona.
+    private var history: [WorkoutSession] { store.history }
+    private var sortedHistory: [WorkoutSession] { history.sorted { $0.dateKey < $1.dateKey } }
+    private var accountName: String { profile.viewedAccount?.displayName ?? "—" }
+    private var routines: [Routine] { profile.visibleRoutines }
 
-    private var inWeek: [HistoryEntry] {
+    private var inWeek: [WorkoutSession] {
         history.filter { entry in
-            let d = DateKey.date(from: entry.date)
+            let d = DateKey.date(from: entry.dateKey)
             return d >= weekStart && d <= weekEnd
         }
     }
@@ -28,8 +29,8 @@ struct RecapView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 PageHeader(eyebrow: "Statistiche", title: "Recap",
-                           subtitle: history.isEmpty ? "Profilo di \(routine.name)"
-                           : "\(routine.name): allenamenti svolti, carico settimanale e andamento dello sforzo percepito.")
+                           subtitle: history.isEmpty ? "Profilo di \(accountName)"
+                           : "\(accountName): allenamenti svolti, carico settimanale e andamento dello sforzo percepito.")
 
                 if history.isEmpty {
                     EmptyStateView(icon: "📊", title: "Ancora nessun allenamento",
@@ -51,9 +52,9 @@ struct RecapView: View {
         .navigationBarTitleDisplayMode(.inline)
         .alert("Cancellare tutto lo storico degli allenamenti?", isPresented: $confirmClear) {
             Button("Annulla", role: .cancel) {}
-            Button("Cancella", role: .destructive) { store.clearHistory(userID: profile.selectedUserID) }
+            Button("Cancella", role: .destructive) { store.clearHistory() }
         }
-        .onChange(of: profile.selectedUserID) { _, _ in
+        .onChange(of: profile.viewedAccountID) { _, _ in
             weekOffset = 0
             pickedDay = nil
         }
@@ -101,20 +102,22 @@ struct RecapView: View {
         VStack(alignment: .leading, spacing: 10) {
             CalendarView(month: $month, selected: pickedDay,
                          onSelect: { iso in pickedDay = (iso == pickedDay ? nil : iso) },
-                         marks: store.calendarMarks(userID: profile.selectedUserID))
+                         marks: store.calendarMarks())
 
-            HStack(spacing: 12) {
+            // Una legenda per scheda: i pallini del calendario prendono il
+            // colore della scheda, e ora le schede possono essere più di una.
+            FlexibleTags(items: routines.map(\.name)) { name in
+                let accent = routines.first { $0.name == name }?.accent ?? Theme.defaultAccent
                 HStack(spacing: 5) {
-                    Circle().fill(routine.accent).frame(width: 7, height: 7)
-                    Text(routine.name)
+                    Circle().fill(accent).frame(width: 7, height: 7)
+                    Text(name)
                         .font(.system(size: 11.5))
                         .foregroundStyle(Theme.textFaint)
                 }
-                Spacer(minLength: 0)
             }
 
             if let pickedDay {
-                let entries = history.filter { $0.date == pickedDay }
+                let entries = history.filter { $0.dateKey == pickedDay }
                 Panel {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(DateKey.long(DateKey.date(from: pickedDay)))
@@ -125,7 +128,7 @@ struct RecapView: View {
                                 .font(.system(size: 13))
                                 .foregroundStyle(Theme.textDim)
                         } else {
-                            ForEach(entries) { entry in
+                            ForEach(entries, id: \.id) { entry in
                                 RecapLine(left: "\(entry.routineName) · giorno \(entry.dayIndex + 1)",
                                           right: "\(Fmt.duration(entry.duration)) · sforzo \(entry.effort.map(String.init) ?? "—")")
                             }
@@ -155,16 +158,18 @@ struct RecapView: View {
                     .foregroundStyle(Theme.text)
                     .padding(.bottom, 4)
 
-                RecapLine(left: "\(routine.emoji) \(routine.name)",
-                          right: summary(for: routine),
-                          leftColor: routine.accent)
+                ForEach(routines, id: \.id) { routine in
+                    RecapLine(left: "\(routine.emoji) \(routine.name)",
+                              right: summary(for: routine),
+                              leftColor: routine.accent)
+                }
             }
         }
     }
 
     /// "3 sessioni · sforzo 6.3 · 58 min"
     private func summary(for routine: Routine) -> String {
-        let list = history.filter { $0.routineId == routine.id }
+        let list = history.filter { $0.routineID == routine.id }
         var text = Fmt.plural(list.count, "sessione", "sessioni")
         let efforts = list.compactMap { $0.effort }.map(Double.init)
         if !efforts.isEmpty { text += " · sforzo \(Fmt.round1(Fmt.average(efforts)))" }
@@ -177,10 +182,10 @@ struct RecapView: View {
             SectionHeader(title: "Ultimi allenamenti", trailing: "Azzera storico") { confirmClear = true }
             Panel {
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(sortedHistory.suffix(12).reversed()) { entry in
+                    ForEach(Array(sortedHistory.suffix(12).reversed()), id: \.id) { entry in
                         RecapLine(
                             left: "\(entry.routineName) · \(entry.dayName)",
-                            right: "\(DateKey.short(DateKey.date(from: entry.date))) · \(Fmt.duration(entry.duration)) · \(entry.setsDone)/\(entry.sets) serie"
+                            right: "\(DateKey.short(DateKey.date(from: entry.dateKey))) · \(Fmt.duration(entry.duration)) · \(entry.setsDone)/\(entry.sets) serie"
                                 + (entry.effort.map { " · sforzo \($0)" } ?? ""),
                             leftColor: Color(hex: entry.accentHex)
                         )
@@ -193,9 +198,9 @@ struct RecapView: View {
 
 /// Le ultime 10 sessioni con lo sforzo segnato, e il confronto fra recenti e precedenti.
 struct EffortTrend: View {
-    let entries: [HistoryEntry]
+    let entries: [WorkoutSession]
 
-    private var scored: [HistoryEntry] {
+    private var scored: [WorkoutSession] {
         Array(entries.filter { $0.effort != nil }.suffix(10))
     }
 
@@ -212,7 +217,7 @@ struct EffortTrend: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .bottom, spacing: 6) {
-                    ForEach(scored) { entry in
+                    ForEach(scored, id: \.id) { entry in
                         RoundedRectangle(cornerRadius: 4)
                             .fill(Color(hex: entry.accentHex))
                             .frame(height: max(6, CGFloat(entry.effort ?? 0) / 10 * 90))
@@ -222,9 +227,9 @@ struct EffortTrend: View {
                 .frame(height: 90, alignment: .bottom)
 
                 HStack {
-                    Text(DateKey.short(DateKey.date(from: scored.first!.date)))
+                    Text(DateKey.short(DateKey.date(from: scored.first!.dateKey)))
                     Spacer()
-                    Text(DateKey.short(DateKey.date(from: scored.last!.date)))
+                    Text(DateKey.short(DateKey.date(from: scored.last!.dateKey)))
                 }
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.textFaint)

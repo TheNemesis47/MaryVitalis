@@ -8,7 +8,7 @@ struct GymLocation: Identifiable, Hashable {
     let name: String
     let city: String
     let address: String?
-    let zones: [GymZone]
+    let zones: [GymZoneFrame]
     let machines: [GymMachine]
 
     var displayName: String { "\(brand) \(name)" }
@@ -17,7 +17,7 @@ struct GymLocation: Identifiable, Hashable {
         machines.first { $0.id == id }
     }
 
-    func zone(for machine: GymMachine) -> GymZone? {
+    func zone(for machine: GymMachine) -> GymZoneFrame? {
         zones.first { $0.frame.contains(machine.center) }
     }
 
@@ -32,7 +32,7 @@ struct GymLocation: Identifiable, Hashable {
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
 }
 
-struct GymZone: Identifiable, Hashable {
+struct GymZoneFrame: Identifiable, Hashable {
     let id: String
     let name: String
     let subtitle: String
@@ -50,19 +50,19 @@ enum GymCatalog {
         city: "Napoli",
         address: nil,
         zones: [
-            GymZone(id: "strength-north", name: "Forza Nord", subtitle: "Gambe e spinte guidate",
+            GymZoneFrame(id: "strength-north", name: "Forza Nord", subtitle: "Gambe e spinte guidate",
                     symbol: "figure.strengthtraining.functional", colorHex: "#38bdf8",
                     frame: CGRect(x: 0, y: 0, width: 292, height: 238)),
-            GymZone(id: "functional", name: "Cavi & Functional", subtitle: "Colonne, corpo libero e mobilità",
+            GymZoneFrame(id: "functional", name: "Cavi & Functional", subtitle: "Colonne, corpo libero e mobilità",
                     symbol: "figure.cooldown", colorHex: "#a78bfa",
                     frame: CGRect(x: 292, y: 0, width: 199.7, height: 287)),
-            GymZone(id: "guided", name: "Isotonica", subtitle: "Macchine guidate full body",
+            GymZoneFrame(id: "guided", name: "Isotonica", subtitle: "Macchine guidate full body",
                     symbol: "figure.strengthtraining.traditional", colorHex: "#4ade80",
                     frame: CGRect(x: 0, y: 238, width: 398, height: 314)),
-            GymZone(id: "cardio", name: "Cardio", subtitle: "Tapis roulant, bike e scale",
+            GymZoneFrame(id: "cardio", name: "Cardio", subtitle: "Tapis roulant, bike e scale",
                     symbol: "heart.fill", colorHex: "#fb7185",
                     frame: CGRect(x: 398, y: 287, width: 93.7, height: 454)),
-            GymZone(id: "free-weights", name: "Pesi liberi", subtitle: "Manubri, panche e spazio a terra",
+            GymZoneFrame(id: "free-weights", name: "Pesi liberi", subtitle: "Manubri, panche e spazio a terra",
                     symbol: "dumbbell.fill", colorHex: "#fbbf24",
                     frame: CGRect(x: 0, y: 552, width: 398, height: 189))
         ],

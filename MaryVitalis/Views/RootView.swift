@@ -9,7 +9,7 @@ struct RootView: View {
     @EnvironmentObject private var store: WorkoutStore
 
     @State private var tab: Tab = .home
-    @State private var routinePath: [String] = []
+    @State private var routinePath: [UUID] = []
     /// Filtro iniziale passato dalla home quando si tocca un distretto.
     @State private var exercisePreset: ExercisesView.Preset?
 
@@ -21,9 +21,9 @@ struct RootView: View {
                 LoginView()
             }
         }
-        .onAppear { activateSelectedUser() }
-        .onChange(of: profile.selectedUserID) { _, _ in activateSelectedUser() }
-        .onChange(of: profile.signedInAccountID) { _, _ in activateSelectedUser() }
+        .onAppear { activateViewedAccount() }
+        .onChange(of: profile.viewedAccountID) { _, _ in activateViewedAccount() }
+        .onChange(of: profile.signedInAccountID) { _, _ in activateViewedAccount() }
     }
 
     private var mainTabs: some View {
@@ -48,8 +48,8 @@ struct RootView: View {
 
             NavigationStack(path: $routinePath) {
                 RoutinesView()
-                    .navigationDestination(for: String.self) { id in
-                        if let routine = profile.availableRoutines.first(where: { $0.id == id }) {
+                    .navigationDestination(for: UUID.self) { id in
+                        if let routine = profile.visibleRoutines.first(where: { $0.id == id }) {
                             RoutineDetailView(routine: routine)
                         } else {
                             EmptyStateView(icon: "🤔", title: "Scheda non trovata",
@@ -75,9 +75,10 @@ struct RootView: View {
         .tint(Theme.defaultAccent)
     }
 
-    private func activateSelectedUser() {
-        guard profile.isSignedIn else { return }
-        store.activateUser(profile.selectedUserID)
+    private func activateViewedAccount() {
+        // Anche il caso "disconnesso" va propagato: altrimenti widget e Live
+        // Activity continuano a mostrare il profilo di chi è appena uscito.
+        store.activate(accountID: profile.isSignedIn ? profile.viewedAccountID : nil)
     }
 }
 

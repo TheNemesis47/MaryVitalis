@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>API_KEY</key>
+	<string>AIzaSyBjxJ8Ch9LsrtMzW7YJ0zs-NcPEllcvHYw</string>
+	<key>GCM_SENDER_ID</key>
+	<string>804775463215</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>it.maryvitalis.app</string>
+	<key>PROJECT_ID</key>
+	<string>maryvitalis-a68f4</string>
+	<key>STORAGE_BUCKET</key>
+	<string>maryvitalis-a68f4.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:804775463215:ios:595e18fb6c03b6901ef9da</string>
+</dict>
+</plist>

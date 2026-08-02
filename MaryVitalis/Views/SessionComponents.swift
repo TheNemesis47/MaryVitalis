@@ -3,7 +3,9 @@ import SwiftUI
 /// Le caselle delle serie. Si segnano **in ordine**: toccando la n-esima si
 /// completano anche le precedenti, ritoccandone una già fatta si torna indietro.
 struct SetPills: View {
-    let plan: Plan
+    let sets: Int
+    /// Valorizzato solo per i blocchi cardio.
+    let minutes: Int?
     let doneCount: Int
     let accent: Color
     var onSet: (Int) -> Void
@@ -11,7 +13,7 @@ struct SetPills: View {
     var cardioLabel: String
 
     var body: some View {
-        if let minutes = plan.minutes {
+        if let minutes {
             let complete = doneCount >= 1
             HStack(spacing: 8) {
                 Button {
@@ -40,7 +42,7 @@ struct SetPills: View {
             }
         } else {
             HStack(spacing: 7) {
-                ForEach(0..<plan.sets, id: \.self) { index in
+                ForEach(0..<sets, id: \.self) { index in
                     let isDone = index < doneCount
                     Button {
                         // Toccando una casella non ancora fatta si completano anche le precedenti.
@@ -64,7 +66,7 @@ struct SetPills: View {
 
 /// Una riga della checklist in modalità allenamento.
 struct WorkoutRow: View {
-    let item: RoutineExercise
+    let item: RoutineItem
     let index: Int
     let exercise: Exercise?
     let doneCount: Int
@@ -74,9 +76,8 @@ struct WorkoutRow: View {
     var onOpenDetail: () -> Void
     var onOpenMap: () -> Void
 
-    private var plan: Plan { item.plan }
-    private var isComplete: Bool { doneCount >= plan.sets }
-    private var name: String { exercise?.name ?? item.query }
+    private var isComplete: Bool { doneCount >= item.sets }
+    private var name: String { exercise?.name ?? item.accentFallbackName }
 
     var body: some View {
         Panel(padding: 12, radius: Theme.rLg) {
@@ -133,7 +134,7 @@ struct WorkoutRow: View {
                     }
                 }
 
-                SetPills(plan: plan, doneCount: doneCount, accent: accent,
+                SetPills(sets: item.sets, minutes: item.minutes, doneCount: doneCount, accent: accent,
                          onSet: onSet, onTimer: onTimer, cardioLabel: name)
             }
         }

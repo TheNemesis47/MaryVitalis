@@ -14,50 +14,48 @@ struct RoutineDetailView: View {
     @State private var askEffort = false
     @State private var showMap = false
     @State private var mapFocus: GymMachine?
+    @State private var showEditor = false
 
-    private var day: RoutineDay { routine.days[activeDay] }
-    private var stats: DayStats { store.stats(routine: routine, day: activeDay) }
+    private var days: [RoutineDay] { routine.orderedDays }
+    private var day: RoutineDay? { days.indices.contains(activeDay) ? days[activeDay] : nil }
+    private var items: [RoutineItem] { day?.orderedItems ?? [] }
+    private var stats: DayStats { store.stats(routine: routine, dayIndex: activeDay) }
     private var started: Bool { stats.setsDone > 0 }
     private var accent: Color { routine.accent }
 
+    private func doneCount(_ item: RoutineItem) -> Int {
+        guard let day else { return 0 }
+        return store.doneCount(routineID: routine.id, dayID: day.id, itemID: item.id)
+    }
+
     /// Indice dell'esercizio corrente: il primo non ancora completato.
     private var currentIndex: Int? {
-        day.exercises.indices.first { index in
-            store.doneCount(routineId: routine.id, day: activeDay, exercise: index) < day.exercises[index].plan.sets
-        }
+        items.indices.first { doneCount(items[$0]) < items[$0].sets }
     }
 
     private var nextIndex: Int? {
         guard let current = currentIndex else { return nil }
-        return day.exercises.indices.first { index in
-            index > current && store.doneCount(routineId: routine.id, day: activeDay, exercise: index) < day.exercises[index].plan.sets
-        }
+        return items.indices.first { $0 > current && doneCount(items[$0]) < items[$0].sets }
     }
 
     private var highlight: MapHighlight {
         MapHighlight(
-            current: currentIndex.map { MapHighlight.Item(
-                title: exerciseName(at: $0),
-                detail: day.exercises[$0].details,
-                machines: GymCatalog.machines(for: day.exercises[$0].query)
-            ) },
-            next: nextIndex.map { MapHighlight.Item(
-                title: exerciseName(at: $0),
-                detail: day.exercises[$0].details,
-                machines: GymCatalog.machines(for: day.exercises[$0].query)
-            ) },
-            completed: day.exercises.indices.compactMap { index in
-                let item = day.exercises[index]
-                guard store.doneCount(routineId: routine.id, day: activeDay, exercise: index) >= item.plan.sets else {
-                    return nil
-                }
-                return MapHighlight.Item(
-                    title: exerciseName(at: index),
-                    detail: item.details,
-                    machines: GymCatalog.machines(for: item.query)
-                )
+            current: currentIndex.map { mapItem(at: $0) },
+            next: nextIndex.map { mapItem(at: $0) },
+            completed: items.indices.compactMap { index in
+                guard doneCount(items[index]) >= items[index].sets else { return nil }
+                return mapItem(at: index)
             },
             accent: accent
+        )
+    }
+
+    private func mapItem(at index: Int) -> MapHighlight.Item {
+        let item = items[index]
+        return MapHighlight.Item(
+            title: exerciseName(at: index),
+            detail: item.details,
+            machines: GymCatalog.machines(for: item.exerciseQuery)
         )
     }
 
@@ -109,16 +107,31 @@ struct RoutineDetailView: View {
                     Image(systemName: "map.fill")
                 }
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { showEditor = true } label: {
+                    Image(systemName: "slider.horizontal.3")
+                }
+                .accessibilityLabel("Modifica la scheda")
+                // Durante l'allenamento la scheda non si tocca: cambiarla a
+                // metà sposterebbe le serie sotto i piedi di chi la sta facendo.
+                .disabled(session.isRunning)
+            }
+        }
+        .sheet(isPresented: $showEditor) {
+            NavigationStack { RoutineEditorView(routine: routine) }
+                .presentationBackground(Theme.bg)
         }
         .sheet(item: $detail) { ExerciseDetailView(detail: $0) }
         .sheet(isPresented: $askDate) {
-            DateSheet(initial: DateKey.iso(Date()), marks: store.calendarMarks(userID: routine.id), accent: accent) { date in
+            DateSheet(initial: DateKey.iso(Date()), marks: store.calendarMarks(), accent: accent) { date in
                 askDate = false
+                guard let day else { return }
                 session.start(
                     date: date,
                     routineID: routine.id,
+                    dayID: day.id,
                     routineName: routine.name,
-                    userName: routine.name,
+                    userName: routine.owner?.displayName ?? routine.name,
                     dayIndex: activeDay,
                     accentHex: routine.accentHex,
                     initialState: liveActivityState()
@@ -185,8 +198,8 @@ struct RoutineDetailView: View {
 
     private var dayTabs: some View {
         HStack(spacing: 8) {
-            ForEach(routine.days.indices, id: \.self) { index in
-                let s = store.stats(routine: routine, day: index)
+            ForEach(days.indices, id: \.self) { index in
+                let s = store.stats(routine: routine, dayIndex: index)
                 Button {
                     activeDay = index
                     Feedback.tap()
@@ -210,7 +223,7 @@ struct RoutineDetailView: View {
                     .foregroundStyle(Color(hex: "#0a0f1a"))
                     .frame(width: 28, height: 28)
                     .background(accent, in: Circle())
-                Text(day.name)
+                Text(day?.name ?? "")
                     .font(.system(size: 18, weight: .bold))
                     .foregroundStyle(Theme.text)
                     .fixedSize(horizontal: false, vertical: true)
@@ -253,22 +266,22 @@ struct RoutineDetailView: View {
 
             if session.isRunning {
                 VStack(spacing: 10) {
-                    ForEach(Array(day.exercises.enumerated()), id: \.element.id) { index, item in
+                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                         WorkoutRow(
                             item: item,
                             index: index + 1,
-                            exercise: library.find(item.query),
-                            doneCount: store.doneCount(routineId: routine.id, day: activeDay, exercise: index),
+                            exercise: library.find(item.exerciseQuery),
+                            doneCount: doneCount(item),
                             accent: accent,
                             onSet: { setDone(exercise: index, count: $0) },
                             onTimer: { seconds, label in session.startRest(seconds: seconds, label: label) },
                             onOpenDetail: {
-                                if let ex = library.find(item.query) {
+                                if let ex = library.find(item.exerciseQuery) {
                                     detail = ExerciseDetail(exercise: ex, note: item.details)
                                 }
                             },
                             onOpenMap: {
-                                mapFocus = GymCatalog.machines(for: item.query).first
+                                mapFocus = GymCatalog.machines(for: item.exerciseQuery).first
                                 showMap = true
                             }
                         )
@@ -276,8 +289,8 @@ struct RoutineDetailView: View {
                 }
             } else {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 165), spacing: 12)], spacing: 12) {
-                    ForEach(Array(day.exercises.enumerated()), id: \.element.id) { index, item in
-                        if let ex = library.find(item.query) {
+                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                        if let ex = library.find(item.exerciseQuery) {
                             ExerciseCard(exercise: ex, note: item.details, index: index + 1) {
                                 detail = ExerciseDetail(exercise: ex, note: item.details)
                             }
@@ -298,7 +311,7 @@ struct RoutineDetailView: View {
 
                 if started {
                     Button("↺ Azzera") {
-                        store.resetDay(routineId: routine.id, day: activeDay)
+                        if let day { store.resetDay(routineID: routine.id, dayID: day.id) }
                     }
                     .buttonStyle(GhostButtonStyle())
                 }
@@ -323,38 +336,38 @@ struct RoutineDetailView: View {
     // MARK: - Azioni
 
     private func exerciseName(at index: Int) -> String {
-        let item = day.exercises[index]
-        return library.find(item.query)?.name ?? item.query
+        let item = items[index]
+        return library.find(item.exerciseQuery)?.name ?? item.accentFallbackName
     }
 
     private func setDone(exercise index: Int, count: Int) {
-        let plan = day.exercises[index].plan
-        let increased = store.setDone(routineId: routine.id, day: activeDay,
-                                      exercise: index, count: count, maxSets: plan.sets)
+        guard let day, items.indices.contains(index) else { return }
+        let item = items[index]
+        let increased = store.setDone(routineID: routine.id, dayID: day.id, item: item, count: count)
         Feedback.tap()
         session.updateWorkoutState(liveActivityState())
 
         // Serie appena completata: parte da sola la pausa di recupero.
-        if increased, session.isRunning, !plan.isCardio {
-            session.startRest(seconds: store.restDefault, label: "Recupero")
+        if increased, session.isRunning, !item.isCardio {
+            session.startRest(seconds: item.restOverrideSeconds ?? store.restDefault, label: "Recupero")
         }
     }
 
     private func liveActivityState() -> WorkoutActivityAttributes.ContentState {
-        let pending = day.exercises.indices.filter { index in
-            store.doneCount(routineId: routine.id, day: activeDay, exercise: index) < day.exercises[index].plan.sets
-        }
+        let pending = items.indices.filter { doneCount(items[$0]) < items[$0].sets }
 
         guard let current = pending.first else {
             return WorkoutActivityAttributes.ContentState(
-                exercise: .init(index: max(0, day.exercises.count - 1),
+                exercise: .init(index: max(0, items.count - 1),
+                                itemID: items.last?.id ?? UUID(),
                                 name: "Allenamento completato",
-                                details: day.name,
+                                details: day?.name ?? "",
                                 completedSets: stats.sets,
-                                totalSets: stats.sets),
+                                totalSets: stats.sets,
+                                isCardio: false),
                 upcoming: [],
-                exerciseNumber: day.exercises.count,
-                totalExercises: day.exercises.count,
+                exerciseNumber: items.count,
+                totalExercises: items.count,
                 selectedRestSeconds: store.restDefault,
                 restEndsAt: nil,
                 pausedRestSeconds: nil,
@@ -367,7 +380,7 @@ struct RoutineDetailView: View {
             exercise: liveExerciseSummary(at: current),
             upcoming: pending.dropFirst().map(liveExerciseSummary),
             exerciseNumber: current + 1,
-            totalExercises: day.exercises.count,
+            totalExercises: items.count,
             selectedRestSeconds: store.restDefault,
             restEndsAt: nil,
             pausedRestSeconds: nil,
@@ -377,21 +390,23 @@ struct RoutineDetailView: View {
     }
 
     private func liveExerciseSummary(at index: Int) -> WorkoutActivityAttributes.ExerciseSummary {
-        let item = day.exercises[index]
+        let item = items[index]
         return .init(
             index: index,
+            itemID: item.id,
             name: exerciseName(at: index),
             details: item.details,
-            completedSets: store.doneCount(routineId: routine.id, day: activeDay, exercise: index),
-            totalSets: item.plan.sets
+            completedSets: doneCount(item),
+            totalSets: item.sets,
+            isCardio: item.isCardio
         )
     }
 
     private func syncWidgetCommands() {
-        guard session.isRunning, let sessionID = session.sessionID else { return }
+        guard session.isRunning, let sessionID = session.sessionID, let day else { return }
         let commands = store.consumeWidgetCommands(sessionID: sessionID,
                                                    routineID: routine.id,
-                                                   dayIndex: activeDay)
+                                                   dayID: day.id)
         guard !commands.isEmpty else { return }
         session.refreshFromLiveActivity()
         session.updateWorkoutState(liveActivityState())
@@ -407,20 +422,18 @@ struct RoutineDetailView: View {
     }
 
     private func saveSession(effort: Int) {
-        store.addHistory(HistoryEntry(
-            id: UUID().uuidString,
-            routineId: routine.id,
-            routineName: routine.name,
-            accentHex: routine.accentHex,
-            dayIndex: activeDay,
-            dayName: day.name,
-            date: session.date,
-            duration: session.elapsed,
-            sets: stats.sets,
-            setsDone: stats.setsDone,
-            sips: session.sips,
-            effort: effort
-        ))
+        if let day {
+            store.addSession(
+                routine: routine,
+                day: day,
+                dayIndex: activeDay,
+                dateKey: session.date,
+                duration: session.elapsed,
+                stats: stats,
+                sips: session.sips,
+                effort: effort
+            )
+        }
         Feedback.success()
         askEffort = false
         session.stop()

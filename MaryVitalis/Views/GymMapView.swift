@@ -549,7 +549,7 @@ struct GymMapView: View {
         return .degrees(column < 2 ? 90 : -90)
     }
 
-    private func accessibilityLabel(for machine: GymMachine, zone: GymZone?) -> String {
+    private func accessibilityLabel(for machine: GymMachine, zone: GymZoneFrame?) -> String {
         var parts = [machine.name, machine.category.rawValue]
         if !machine.muscles.isEmpty {
             parts.append("Allena: \(machine.muscles.joined(separator: ", "))")

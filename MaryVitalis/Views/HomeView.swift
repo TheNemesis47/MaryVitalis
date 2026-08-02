@@ -7,7 +7,7 @@ struct HomeView: View {
     @State private var showSettings = false
 
     var openBodyPart: (String) -> Void
-    var openRoutine: (String) -> Void
+    var openRoutine: (UUID) -> Void
     var goToTab: (Tab) -> Void
 
     var body: some View {
@@ -47,9 +47,9 @@ struct HomeView: View {
                     .tracking(1.8)
                     .foregroundStyle(Theme.textFaint)
 
-                Label("Profilo di \(profile.selectedRoutine.name)", systemImage: "person.crop.circle.fill")
+                Label("Profilo di \(profile.viewedAccount?.displayName ?? "—")", systemImage: "person.crop.circle.fill")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(profile.selectedRoutine.accent)
+                    .foregroundStyle(Color(hex: profile.viewedAccount?.accentHex ?? "#38bdf8"))
 
                 (Text("Il tuo allenamento, ") + Text("spiegato bene.").italic().foregroundColor(Theme.defaultAccent))
                     .font(.system(size: 29, weight: .bold))
@@ -81,14 +81,14 @@ struct HomeView: View {
             StatTile(value: "\(library.all.count)", label: "Esercizi")
             StatTile(value: "\(library.targets.count)", label: "Gruppi muscolari")
             StatTile(value: "\(GymCatalog.defaultLocation.machines.count)", label: "Attrezzi mappati")
-            StatTile(value: "\(profile.availableRoutines.count)", label: "Schede accessibili")
+            StatTile(value: "\(profile.visibleRoutines.count)", label: "Schede accessibili")
         }
     }
 
     private var routines: some View {
         VStack(alignment: .leading, spacing: 12) {
             SectionHeader(title: "Le schede di allenamento", trailing: "Vedi tutte →") { goToTab(.schede) }
-            ForEach(profile.availableRoutines) { routine in
+            ForEach(profile.visibleRoutines, id: \.id) { routine in
                 RoutineCard(routine: routine, daysDone: store.completedDays(routine: routine)) {
                     openRoutine(routine.id)
                 }
@@ -143,7 +143,7 @@ struct RoutineCard: View {
                     .foregroundStyle(Theme.textDim)
                     .fixedSize(horizontal: false, vertical: true)
 
-                FlexibleTags(items: routine.meta + (daysDone > 0 ? ["✓ \(daysDone)/\(routine.days.count) giorni"] : [])) { item in
+                FlexibleTags(items: routine.meta + (daysDone > 0 ? ["✓ \(daysDone)/\(routine.orderedDays.count) giorni"] : [])) { item in
                     MetaPill(text: item, color: item.hasPrefix("✓") ? routine.accent : Theme.textDim)
                 }
 
