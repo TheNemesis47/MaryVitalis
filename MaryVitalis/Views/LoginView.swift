@@ -14,6 +14,7 @@ struct LoginView: View {
     @State private var cloudEmail = ""
     @State private var cloudPassword = ""
     @State private var cloudError: String?
+    @State private var resetSent = false
     @State private var busy = false
     @FocusState private var passwordFocused: Bool
 
@@ -111,6 +112,7 @@ struct LoginView: View {
                 .foregroundStyle(Theme.text)
 
             TextField("Email", text: $cloudEmail)
+                .onChange(of: cloudEmail) { _, _ in resetSent = false }
                 .textContentType(.emailAddress)
                 .keyboardType(.emailAddress)
                 .textInputAutocapitalization(.never)
@@ -150,7 +152,40 @@ struct LoginView: View {
             .buttonStyle(PrimaryButtonStyle())
             .disabled(busy || cloudEmail.isEmpty || cloudPassword.isEmpty)
             .opacity(busy || cloudEmail.isEmpty || cloudPassword.isEmpty ? 0.5 : 1)
+
+            // La password di un account cloud non è recuperabile da qui: la
+            // verifica Firebase, e l'unico modo di rientrare è farsene mandare
+            // una nuova. Senza questo tasto, chi la dimentica resta fuori.
+            if resetSent {
+                Label("Ti abbiamo mandato un'email per scegliere una password nuova. Controlla anche lo spam.",
+                      systemImage: "envelope.badge.fill")
+                    .font(.footnote)
+                    .foregroundStyle(Color(hex: "#4ade80"))
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Button("Password dimenticata?") { Task { await resetPassword() } }
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Theme.textDim)
+                    .disabled(busy || cloudEmail.isEmpty)
+                    .opacity(cloudEmail.isEmpty ? 0.5 : 1)
+            }
         }
+    }
+
+    private func resetPassword() async {
+        guard !busy else { return }
+        busy = true
+        cloudError = nil
+        do {
+            try await AuthService.sendPasswordReset(
+                email: cloudEmail.trimmingCharacters(in: .whitespaces))
+            resetSent = true
+            Feedback.success()
+        } catch {
+            cloudError = error.localizedDescription
+            Feedback.tap()
+        }
+        busy = false
     }
 
     private func cloudLogin() async {
