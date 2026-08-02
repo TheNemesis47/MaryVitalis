@@ -1,0 +1,24 @@
+# macOS
+.DS_Store
+
+# Xcode user-specific data
+xcuserdata/
+*.xcuserstate
+
+# Build products
+DerivedData/
+build/
+*.ipa
+*.dSYM
+*.dSYM.zip
+
+# Signing assets and local configuration
+*.cer
+*.p12
+*.mobileprovision
+AuthKey_*.p8
+.env
+.env.*
+
+# Local analysis output
+graphify-out/
