@@ -489,6 +489,10 @@ final class GymEquipment {
     var tips: [String] = []
     /// `true` quando nemmeno il rilievo sapeva dire di che attrezzo si tratta.
     var uncertain: Bool = false
+    /// Cosa c'è in questa cella. Una sala non è fatta solo di macchine: i
+    /// passaggi sono quello che la rende leggibile, e prima esisteva un solo
+    /// corridoio, verticale, fisso in mezzo alla mappa.
+    var kind: String = GymCellKind.equipment.rawValue
 
     var gym: Gym?
 
@@ -502,7 +506,8 @@ final class GymEquipment {
          muscles: [String] = [],
          howTo: [String] = [],
          tips: [String] = [],
-         uncertain: Bool = false) {
+         uncertain: Bool = false,
+         kind: GymCellKind = .equipment) {
         self.id = id
         self.catalogItemID = catalogItemID
         self.name = name
@@ -514,12 +519,26 @@ final class GymEquipment {
         self.howTo = howTo
         self.tips = tips
         self.uncertain = uncertain
+        self.kind = kind.rawValue
     }
 
     var machineCategory: GymMachine.Category {
         get { GymMachine.Category(rawValue: category) ?? .altro }
         set { category = newValue.rawValue }
     }
+
+    var cellKind: GymCellKind {
+        get { GymCellKind(rawValue: kind) ?? .equipment }
+        set { kind = newValue.rawValue }
+    }
+
+    var isWalkway: Bool { cellKind == .walkway }
+}
+
+/// Cosa occupa una cella della sala.
+enum GymCellKind: String, Codable, CaseIterable {
+    case equipment
+    case walkway
 }
 
 /// Sostituisce il dizionario cablato `GymMap.queryToMachines`: il collegamento

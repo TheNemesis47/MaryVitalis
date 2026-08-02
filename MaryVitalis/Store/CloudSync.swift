@@ -802,7 +802,8 @@ struct GymPayload {
                     "muscles": item.muscles,
                     "howTo": item.howTo,
                     "tips": item.tips,
-                    "uncertain": item.uncertain
+                    "uncertain": item.uncertain,
+                    "kind": item.kind
                 ] as [String: Any]
             },
             "zones": (gym.zones ?? []).map { zone in
@@ -864,7 +865,8 @@ struct GymPayload {
                 muscles: raw["muscles"] as? [String] ?? [],
                 howTo: raw["howTo"] as? [String] ?? [],
                 tips: raw["tips"] as? [String] ?? [],
-                uncertain: raw["uncertain"] as? Bool ?? false
+                uncertain: raw["uncertain"] as? Bool ?? false,
+                kind: GymCellKind(rawValue: raw["kind"] as? String ?? "") ?? .equipment
             )
             equipment.gym = gym
             context.insert(equipment)

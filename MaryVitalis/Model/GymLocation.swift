@@ -23,6 +23,9 @@ struct GymLocation: Identifiable, Hashable {
     /// [id attrezzo: posizione]. Arriva dall'editor, non più dedotta da un
     /// rilievo continuo: la posizione la sceglie chi mappa la sala.
     var placements: [String: GymPlacement] = [:]
+    /// Le celle che sono passaggio invece che postazione. Il corridoio non è
+    /// più uno solo e verticale: si disegna dove passa davvero.
+    var walkways: Set<GymPlacement> = []
 
     var displayName: String { "\(brand) \(name)" }
 

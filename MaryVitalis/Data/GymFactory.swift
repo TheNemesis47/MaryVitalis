@@ -43,7 +43,7 @@ extension Gym {
         let step: CGFloat = 100
         let size: CGFloat = 90
 
-        let machines = orderedEquipment.map { item in
+        let machines = orderedEquipment.filter { !$0.isWalkway }.map { item in
             GymMachine(
                 id: item.id.uuidString,
                 name: item.name,
@@ -74,15 +74,19 @@ extension Gym {
         }
 
         let placements = Dictionary(
-            orderedEquipment.map { ($0.id.uuidString, GymPlacement(row: $0.gridRow, column: $0.gridColumn)) },
+            orderedEquipment.filter { !$0.isWalkway }
+                .map { ($0.id.uuidString, GymPlacement(row: $0.gridRow, column: $0.gridColumn)) },
             uniquingKeysWith: { current, _ in current }
         )
+
+        let walkways = Set(orderedEquipment.filter(\.isWalkway)
+            .map { GymPlacement(row: $0.gridRow, column: $0.gridColumn) })
 
         return GymLocation(id: id.uuidString, brand: brand, name: name,
                            city: city, address: address,
                            zones: frames, machines: machines,
                            columns: gridColumns, rows: gridRows,
-                           placements: placements)
+                           placements: placements, walkways: walkways)
     }
 
     /// La cella libera più in alto a sinistra, dove finisce il prossimo attrezzo.
@@ -137,7 +141,8 @@ extension GymFactory {
                 muscles: item.muscles,
                 howTo: item.howTo,
                 tips: item.tips,
-                uncertain: item.uncertain
+                uncertain: item.uncertain,
+                kind: item.cellKind
             )
             equipment.gym = copy
             context.insert(equipment)

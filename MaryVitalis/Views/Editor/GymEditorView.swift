@@ -207,6 +207,8 @@ struct GymEditorView: View {
     @State private var showPicker = false
     @State private var targetCell: (row: Int, column: Int)?
     @State private var editingEquipment: GymEquipment?
+    @State private var removingWalkway: GymEquipment?
+    @State private var dropTarget: Cell?
     @State private var gridWidth: CGFloat = 0
 
     private let minimumCellWidth: CGFloat = 78
@@ -240,7 +242,7 @@ struct GymEditorView: View {
                     .font(.headline)
                     .foregroundStyle(Theme.text)
 
-                Text("Tocca una cella vuota per metterci un attrezzo, toccane uno per modificarlo. Le celle vuote restano vuote: se in sala lì non c'è niente, la mappa lo rispecchia.")
+                Text("Tocca una cella vuota per metterci un attrezzo o un passaggio, toccane una piena per modificarla, e trascina per spostare: se nella cella di arrivo c'è già qualcosa, le due si scambiano di posto. Le celle vuote restano vuote: se in sala lì non c'è niente, la mappa lo rispecchia.")
                     .font(.footnote)
                     .foregroundStyle(Theme.textFaint)
                     .fixedSize(horizontal: false, vertical: true)
@@ -256,9 +258,24 @@ struct GymEditorView: View {
         .onSettled([gym.name, gym.brand, gym.city]) { save() }
         .onDisappear { save() }
         .sheet(isPresented: $showPicker) {
-            EquipmentPickerSheet { machine in
+            EquipmentPickerSheet(onPickWalkway: { addWalkway() }) { machine in
                 addEquipment(from: machine)
             }
+        }
+        .alert("Togliere il passaggio?",
+               isPresented: Binding(get: { removingWalkway != nil },
+                                    set: { if !$0 { removingWalkway = nil } })) {
+            Button("Annulla", role: .cancel) { removingWalkway = nil }
+            Button("Togli", role: .destructive) {
+                if let removingWalkway {
+                    removingWalkway.gym = nil
+                    context.delete(removingWalkway)
+                    save()
+                }
+                removingWalkway = nil
+            }
+        } message: {
+            Text("La cella torna vuota. Puoi rimetterci un attrezzo o un altro passaggio.")
         }
         .sheet(isPresented: Binding(get: { editingEquipment != nil },
                                     set: { if !$0 { editingEquipment = nil } })) {
@@ -388,46 +405,122 @@ struct GymEditorView: View {
     private func cell(row: Int, column: Int, item: GymEquipment?) -> some View {
         Button {
             if let item {
-                editingEquipment = item
+                if item.isWalkway {
+                    removingWalkway = item
+                } else {
+                    editingEquipment = item
+                }
             } else {
                 targetCell = (row, column)
                 showPicker = true
             }
             Feedback.tap()
         } label: {
-            Group {
-                if let item {
-                    VStack(spacing: 5) {
-                        Image(systemName: item.machineCategory.symbol)
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(item.machineCategory.color)
-                        Text(item.name)
-                            .font(.system(size: 10.5, weight: .semibold))
-                            .foregroundStyle(Theme.text)
-                            .multilineTextAlignment(.center)
-                            .lineLimit(2)
-                            .minimumScaleFactor(0.8)
-                    }
-                    .padding(5)
-                    .frame(maxWidth: .infinity, minHeight: 76)
-                    .background(item.machineCategory.color.opacity(0.1),
-                                in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(item.machineCategory.color.opacity(0.35), lineWidth: 1))
-                } else {
-                    Image(systemName: "plus")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(Theme.textFaint.opacity(0.5))
-                        .frame(maxWidth: .infinity, minHeight: 76)
-                        .background(Theme.surface.opacity(0.4),
-                                    in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .stroke(Theme.border.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [4, 4])))
-                }
-            }
+            cellContent(item)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(item?.name ?? "Cella vuota, riga \(row + 1) colonna \(column + 1)")
+        // Trascinare è il modo naturale di spostare una postazione: prima
+        // bisognava aprirla e cambiare due contatori "riga" e "colonna",
+        // che è il contrario di guardare una piantina.
+        .draggable(item?.id.uuidString ?? "") {
+            cellContent(item).frame(width: cellWidth).opacity(0.9)
+        }
+        .dropDestination(for: String.self) { payload, _ in
+            move(payload.first, toRow: row, column: column)
+        } isTargeted: { targeted in
+            dropTarget = targeted ? Cell(row: row, column: column) : nil
+        }
+        .overlay {
+            if dropTarget == Cell(row: row, column: column) {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Theme.defaultAccent, lineWidth: 2)
+            }
+        }
+        .accessibilityLabel(accessibilityLabel(item, row: row, column: column))
+    }
+
+    @ViewBuilder
+    private func cellContent(_ item: GymEquipment?) -> some View {
+        if let item, item.isWalkway {
+            Image(systemName: "arrow.up.and.down.and.arrow.left.and.right")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(Theme.textFaint)
+                .frame(maxWidth: .infinity, minHeight: 76)
+                .background(Color(hex: "#0a1120").opacity(0.75),
+                            in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Theme.borderHi, lineWidth: 1))
+        } else if let item {
+            VStack(spacing: 5) {
+                Image(systemName: item.machineCategory.symbol)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(item.machineCategory.color)
+                Text(item.name)
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+            }
+            .padding(5)
+            .frame(maxWidth: .infinity, minHeight: 76)
+            .background(item.machineCategory.color.opacity(0.1),
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(item.machineCategory.color.opacity(0.35), lineWidth: 1))
+        } else {
+            Image(systemName: "plus")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(Theme.textFaint.opacity(0.5))
+                .frame(maxWidth: .infinity, minHeight: 76)
+                .background(Theme.surface.opacity(0.4),
+                            in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Theme.border.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [4, 4])))
+        }
+    }
+
+    private func accessibilityLabel(_ item: GymEquipment?, row: Int, column: Int) -> String {
+        guard let item else { return "Cella vuota, riga \(row + 1) colonna \(column + 1)" }
+        return item.isWalkway ? "Passaggio, riga \(row + 1) colonna \(column + 1)" : item.name
+    }
+
+    /// Sposta una postazione nella cella indicata. Se lì c'è già qualcosa le
+    /// due si scambiano di posto: nella sala reale gli attrezzi si spostano,
+    /// non si sovrascrivono.
+    @discardableResult
+    private func move(_ payload: String?, toRow row: Int, column: Int) -> Bool {
+        guard let payload, let id = UUID(uuidString: payload),
+              let moved = gym.orderedEquipment.first(where: { $0.id == id }),
+              moved.gridRow != row || moved.gridColumn != column else { return false }
+
+        let origin = (row: moved.gridRow, column: moved.gridColumn)
+        if let occupant = gym.orderedEquipment.first(where: {
+            $0.gridRow == row && $0.gridColumn == column
+        }) {
+            occupant.gridRow = origin.row
+            occupant.gridColumn = origin.column
+        }
+        moved.gridRow = row
+        moved.gridColumn = column
+        save()
+        Feedback.success()
+        return true
+    }
+
+    /// Un pezzo di corridoio. Occupa una cella come un attrezzo, così può
+    /// andare anche di traverso: una sala ha i passaggi che ha, non uno solo
+    /// verticale in mezzo.
+    private func addWalkway() {
+        let cell = targetCell ?? gym.firstFreeCell
+        let walkway = GymEquipment(name: "Passaggio", category: .altro,
+                                   gridRow: cell.row, gridColumn: cell.column,
+                                   kind: .walkway)
+        walkway.gym = gym
+        context.insert(walkway)
+        save()
+        targetCell = nil
+        Feedback.success()
     }
 
     private func addEquipment(from machine: GymMachine?) {
@@ -454,6 +547,7 @@ struct GymEditorView: View {
 
 /// Scelta di un attrezzo dal catalogo di sistema.
 struct EquipmentPickerSheet: View {
+    var onPickWalkway: () -> Void = {}
     var onPick: (GymMachine?) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -480,8 +574,16 @@ struct EquipmentPickerSheet: View {
                         Label("Attrezzo personalizzato", systemImage: "square.and.pencil")
                     }
                     .listRowBackground(Theme.surface)
+
+                    Button {
+                        onPickWalkway()
+                        dismiss()
+                    } label: {
+                        Label("Passaggio", systemImage: "arrow.up.and.down.and.arrow.left.and.right")
+                    }
+                    .listRowBackground(Theme.surface)
                 } footer: {
-                    Text("Se in sala hai qualcosa che non è in elenco, aggiungilo tu con nome, muscoli e istruzioni.")
+                    Text("Se in sala hai qualcosa che non è in elenco, aggiungilo tu con nome, muscoli e istruzioni. Il passaggio serve a disegnare i corridoi — anche di traverso.")
                 }
 
                 Section("Catalogo (\(results.count))") {

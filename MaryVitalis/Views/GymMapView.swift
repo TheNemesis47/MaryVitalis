@@ -30,6 +30,8 @@ private struct PlanWidthKey: PreferenceKey {
 private struct EquipmentFloorRow: Identifiable {
     let id: String
     let machines: [GymMachine?]
+    /// Le colonne che in questa riga sono passaggio.
+    var walkways: Set<Int> = []
     let height: CGFloat
 }
 
@@ -297,10 +299,14 @@ struct GymMapView: View {
     // MARK: - Misure della pianta
 
     private var planColumns: Int { max(1, gym.columns) }
-    /// Le due metà della sala, con il corridoio in mezzo. Con una colonna sola
-    /// il corridoio non ha senso e sparisce.
+    /// Le due metà della sala, con il corridoio in mezzo.
     private var leftColumns: Int { planColumns < 2 ? planColumns : planColumns / 2 }
-    private var showsAisle: Bool { planColumns >= 2 }
+
+    /// Il corridoio centrale fisso vale solo per chi non ha disegnato i propri.
+    /// Era l'unico modo di rappresentare un passaggio, ed era per forza uno e
+    /// verticale: chi ora se li mette dove passano davvero non lo vuole più fra
+    /// i piedi.
+    private var showsAisle: Bool { planColumns >= 2 && gym.walkways.isEmpty }
 
     private var planCellWidth: CGFloat {
         let gaps = 4 * CGFloat(max(0, planColumns - 2)) + (showsAisle ? 12 + aisleWidth : 0)
@@ -359,7 +365,8 @@ struct GymMapView: View {
         return HStack(spacing: 6) {
             HStack(spacing: 4) {
                 ForEach(0..<split, id: \.self) { column in
-                    machineSlot(row.machines[column], column: column)
+                    machineSlot(row.machines[column], column: column,
+                                isWalkway: row.walkways.contains(column))
                         .frame(width: planCellWidth)
                 }
             }
@@ -371,7 +378,8 @@ struct GymMapView: View {
 
             HStack(spacing: 4) {
                 ForEach(split..<count, id: \.self) { column in
-                    machineSlot(row.machines[column], column: column)
+                    machineSlot(row.machines[column], column: column,
+                                isWalkway: row.walkways.contains(column))
                         .frame(width: planCellWidth)
                 }
             }
@@ -405,16 +413,35 @@ struct GymMapView: View {
     }
 
     @ViewBuilder
-    private func machineSlot(_ machine: GymMachine?, column: Int) -> some View {
+    private func machineSlot(_ machine: GymMachine?, column: Int,
+                             isWalkway: Bool = false) -> some View {
         if let machine {
             machineButton(machine, column: column)
                 .padding(.horizontal, 2)
                 .padding(.vertical, 4)
+        } else if isWalkway {
+            walkwayTile
         } else {
             Color.clear
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityHidden(true)
         }
+    }
+
+    /// Un pezzo di corridoio disegnato dall'utente. Stessa grafica del vecchio
+    /// corridoio centrale, ma dove passa davvero — anche di traverso.
+    private var walkwayTile: some View {
+        ZStack {
+            Color(hex: "#0a1120").opacity(0.76)
+            Image(systemName: "arrow.up.and.down.and.arrow.left.and.right")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(Theme.textFaint.opacity(0.55))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border, lineWidth: 1))
+        .padding(.horizontal, 2)
+        .padding(.vertical, 4)
+        .accessibilityLabel("Passaggio")
     }
 
     private func machineButton(_ machine: GymMachine, column: Int) -> some View {
@@ -517,12 +544,20 @@ struct GymMapView: View {
     private var spatialFloorRows: [EquipmentFloorRow] {
         let visibleIDs = Set(filteredMachines.map(\.id))
         let byID = Dictionary(gym.machines.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        let rowCount = max(gym.rows, (gym.placements.values.map(\.row).max() ?? -1) + 1)
+        let rowCount = max(gym.rows,
+                           (gym.placements.values.map(\.row).max() ?? -1) + 1,
+                           (gym.walkways.map(\.row).max() ?? -1) + 1)
 
         var floorRows: [EquipmentFloorRow] = []
         for rowIndex in 0..<rowCount {
             let inRow = gym.placements.filter { $0.value.row == rowIndex }
-            guard inRow.contains(where: { visibleIDs.contains($0.key) }) else { continue }
+            let walkwaysInRow = gym.walkways.filter { $0.row == rowIndex }
+            // Una riga fatta solo di corridoio si disegna comunque: è quella
+            // che fa capire dove si passa. Durante una ricerca invece si
+            // mostrano solo le righe che contengono qualcosa di cercato.
+            let hasVisibleMachine = inRow.contains { visibleIDs.contains($0.key) }
+            let isSearching = !searchText.trimmingCharacters(in: .whitespaces).isEmpty
+            guard hasVisibleMachine || (!isSearching && !walkwaysInRow.isEmpty) else { continue }
 
             let machines = (0..<gym.columns).map { column -> GymMachine? in
                 guard let id = inRow.first(where: { $0.value.column == column })?.key,
@@ -532,6 +567,7 @@ struct GymMapView: View {
             floorRows.append(EquipmentFloorRow(
                 id: "\(gym.id)-r\(rowIndex)",
                 machines: machines,
+                walkways: Set(walkwaysInRow.map(\.column)),
                 height: 112
             ))
         }

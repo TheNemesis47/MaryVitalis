@@ -460,6 +460,39 @@ func run() async throws {
           (0..<2_000).allSatisfy { _ in InviteCode.generate() != GymBirreria.code })
     check("il codice riservato è digitabile", InviteCode.isValid(GymBirreria.code))
 
+    print("\n[passaggi e spostamenti]")
+    // Riga 2: le prime due sono già piene di attrezzi.
+    let passaggio = GymEquipment(name: "Passaggio", category: .altro,
+                                 gridRow: 2, gridColumn: 0, kind: .walkway)
+    passaggio.gym = sede
+    try context.save()
+    check("un passaggio non è un attrezzo", passaggio.isWalkway)
+    check("la mappa lo tiene fuori dagli attrezzi",
+          !sede.asLocation.machines.contains { $0.id == passaggio.id.uuidString })
+    check("ma sa dove passa",
+          sede.asLocation.walkways.contains(GymPlacement(row: 2, column: 0)))
+
+    // Lo scambio di posto è quello che fa il trascinamento nell'editor.
+    let primo = sede.orderedEquipment.first { !$0.isWalkway }!
+    let originale = (primo.gridRow, primo.gridColumn)
+    let altro = sede.orderedEquipment.first {
+        !$0.isWalkway && $0.id != primo.id
+    }!
+    let posizioneAltro = (altro.gridRow, altro.gridColumn)
+    primo.gridRow = posizioneAltro.0
+    primo.gridColumn = posizioneAltro.1
+    altro.gridRow = originale.0
+    altro.gridColumn = originale.1
+    try context.save()
+    check("due postazioni si scambiano senza sovrapporsi",
+          Set(sede.orderedEquipment.map { "\($0.gridRow)-\($0.gridColumn)" }).count
+            == sede.orderedEquipment.count)
+
+    let conPassaggi = GymFactory.copy(sede, to: bea, into: context)
+    try context.save()
+    check("la copia si porta dietro i passaggi",
+          conPassaggi.orderedEquipment.contains(where: \.isWalkway))
+
     print("\n[cancellazione della sede]")
     let daButtare = GymFactory.insertEmpty(named: "Sede di passaggio", owner: anna, into: context)
     try context.save()
