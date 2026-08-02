@@ -187,6 +187,15 @@ private enum WorkoutIntentSupport {
 
     static func update(_ activity: Activity<WorkoutActivityAttributes>,
                        state: WorkoutActivityAttributes.ContentState) async {
+        // Il recupero fatto partire da qui è quello di chi ha il telefono in
+        // tasca e l'app chiusa: senza sveglia non se ne accorgerebbe nessuno.
+        // Una notifica chiesta da un'estensione vale per l'app che la contiene.
+        if let endsAt = state.restEndsAt, !state.isWorkoutComplete {
+            RestAlarm.schedule(endsAt: endsAt, label: state.exercise.name)
+        } else {
+            RestAlarm.cancel()
+        }
+
         await activity.update(ActivityContent(state: state,
                                               staleDate: state.restEndsAt,
                                               relevanceScore: 1))

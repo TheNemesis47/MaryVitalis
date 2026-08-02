@@ -12,6 +12,8 @@
 		B20000000000000000000012 /* MaryVitalisWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B20000000000000000000002 /* MaryVitalisWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		B20000000000000000000013 /* WorkoutIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000005 /* WorkoutIntents.swift */; };
 		B20000000000000000000014 /* WorkoutIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000005 /* WorkoutIntents.swift */; };
+		B20000000000000000000015 /* RestAlarm.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000006 /* RestAlarm.swift */; };
+		B20000000000000000000016 /* RestAlarm.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000006 /* RestAlarm.swift */; };
 		C10000000000000000000011 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = C10000000000000000000001 /* FirebaseAuth */; };
 		C10000000000000000000012 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = C10000000000000000000002 /* FirebaseFirestore */; };
 /* End PBXBuildFile section */
@@ -45,6 +47,7 @@
 		B20000000000000000000002 /* MaryVitalisWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = MaryVitalisWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		B20000000000000000000004 /* WidgetShared.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetShared.swift; sourceTree = "<group>"; };
 		B20000000000000000000005 /* WorkoutIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutIntents.swift; sourceTree = "<group>"; };
+		B20000000000000000000006 /* RestAlarm.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestAlarm.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -147,6 +150,7 @@
 			children = (
 				B20000000000000000000004 /* WidgetShared.swift */,
 				B20000000000000000000005 /* WorkoutIntents.swift */,
+				B20000000000000000000006 /* RestAlarm.swift */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -276,6 +280,7 @@
 			files = (
 				B20000000000000000000010 /* WidgetShared.swift in Sources */,
 				B20000000000000000000013 /* WorkoutIntents.swift in Sources */,
+				B20000000000000000000015 /* RestAlarm.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -285,6 +290,7 @@
 			files = (
 				B20000000000000000000011 /* WidgetShared.swift in Sources */,
 				B20000000000000000000014 /* WorkoutIntents.swift in Sources */,
+				B20000000000000000000016 /* RestAlarm.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

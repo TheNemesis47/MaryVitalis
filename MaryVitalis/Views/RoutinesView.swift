@@ -43,24 +43,30 @@ struct RoutinesView: View {
                 }
 
                 ForEach(profile.visibleRoutines, id: \.id) { routine in
-                    NavigationLink(value: routine.id) {
-                        RoutineCard(routine: routine, daysDone: store.completedDays(routine: routine)) {}
-                            .allowsHitTesting(false)
-                    }
-                    .buttonStyle(.plain)
-                    .contextMenu {
-                        Button { editing = routine } label: {
-                            Label("Modifica", systemImage: "pencil")
+                    ZStack(alignment: .topTrailing) {
+                        NavigationLink(value: routine.id) {
+                            RoutineCard(routine: routine,
+                                        daysDone: store.completedDays(routine: routine))
                         }
-                        Button {
-                            profile.duplicate(routine)
-                            Feedback.tap()
+                        .buttonStyle(.plain)
+                        // Senza una forma esplicita il tocco prende solo dove
+                        // c'è del disegno: è quello che rendeva la card muta.
+                        .contentShape(RoundedRectangle(cornerRadius: Theme.rXl, style: .continuous))
+                        .contextMenu { menu(for: routine) }
+
+                        // Il menu contestuale resta, ma non basta da solo:
+                        // "tieni premuto" non si vede, un bottone sì.
+                        Menu {
+                            menu(for: routine)
                         } label: {
-                            Label("Duplica", systemImage: "doc.on.doc")
+                            Image(systemName: "ellipsis")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundStyle(Theme.textDim)
+                                .frame(width: 36, height: 36)
+                                .background(Theme.surfaceHi, in: Circle())
                         }
-                        Button(role: .destructive) { deleting = routine } label: {
-                            Label("Elimina", systemImage: "trash")
-                        }
+                        .padding(12)
+                        .accessibilityLabel("Azioni su \(routine.name)")
                     }
                 }
 
@@ -100,6 +106,22 @@ struct RoutinesView: View {
         }
     }
 
+    @ViewBuilder
+    private func menu(for routine: Routine) -> some View {
+        Button { editing = routine } label: {
+            Label("Modifica", systemImage: "pencil")
+        }
+        Button {
+            profile.duplicate(routine)
+            Feedback.tap()
+        } label: {
+            Label("Duplica", systemImage: "doc.on.doc")
+        }
+        Button(role: .destructive) { deleting = routine } label: {
+            Label("Elimina", systemImage: "trash")
+        }
+    }
+
     private var profileSwitcher: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
@@ -135,6 +157,6 @@ struct RoutinesView: View {
     }
 
     private var subtitle: String {
-        "Tieni premuto su una scheda per modificarla, duplicarla o eliminarla."
+        "Tocca una scheda per aprirla, usa ••• per modificarla, duplicarla o eliminarla."
     }
 }

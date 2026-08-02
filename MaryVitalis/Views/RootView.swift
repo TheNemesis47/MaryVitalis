@@ -1,3 +1,4 @@
+import AuthenticationServices
 import SwiftUI
 
 enum Tab: Hashable {
@@ -24,6 +25,12 @@ struct RootView: View {
         .onAppear { activateViewedAccount() }
         .onChange(of: profile.viewedAccountID) { _, _ in activateViewedAccount() }
         .onChange(of: profile.signedInAccountID) { _, _ in activateViewedAccount() }
+        // La revoca dalle impostazioni di iOS può arrivare ad app aperta: il
+        // controllo all'avvio, da solo, la vedrebbe solo al prossimo lancio.
+        .onReceive(NotificationCenter.default.publisher(
+            for: ASAuthorizationAppleIDProvider.credentialRevokedNotification)) { _ in
+            Task { await profile.validateAppleCredentialIfNeeded() }
+        }
     }
 
     private var mainTabs: some View {

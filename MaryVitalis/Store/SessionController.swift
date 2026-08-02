@@ -22,6 +22,22 @@ struct RestTimerState {
     }
 }
 
+/// Vive quanto il controller che lo possiede.
+///
+/// Se la pagina della scheda viene lasciata con l'allenamento ancora aperto —
+/// si torna indietro, il sistema scarica la vista — nessuno chiama `stop()` e
+/// la Live Activity resta accesa da sola per ore. Il `deinit` è l'unico posto
+/// che se ne accorge.
+private final class LiveActivityWatchdog {
+    nonisolated(unsafe) var sessionID: String?
+
+    deinit {
+        guard let sessionID else { return }
+        WorkoutActivityManager.end(sessionID: sessionID)
+        RestAlarm.cancel()
+    }
+}
+
 /// La modalità allenamento: cronometro, serie, recupero e promemoria acqua.
 /// Tutto gira sul main thread: il ticker è un `Timer.publish(on: .main)`.
 @MainActor
@@ -42,6 +58,7 @@ final class SessionController: ObservableObject {
     private var ticker: AnyCancellable?
     private let liveActivity = WorkoutActivityManager()
     private var liveState: WorkoutActivityAttributes.ContentState?
+    private let watchdog = LiveActivityWatchdog()
 
     // MARK: - Ciclo di vita
 
@@ -64,6 +81,7 @@ final class SessionController: ObservableObject {
         showWaterPrompt = false
         isRunning = true
         liveState = initialState
+        watchdog.sessionID = newSessionID
         liveActivity.start(
             attributes: WorkoutActivityAttributes(
                 sessionID: newSessionID,
@@ -78,6 +96,8 @@ final class SessionController: ObservableObject {
             state: initialState
         )
         Feedback.sessionStarted()
+        // Il permesso serve prima che parta il primo recupero, non dopo.
+        Task { await RestAlarm.requestAuthorizationIfNeeded() }
         startTicker()
     }
 
@@ -88,9 +108,11 @@ final class SessionController: ObservableObject {
         showWaterPrompt = false
         ticker?.cancel()
         ticker = nil
+        RestAlarm.cancel()
         liveActivity.end(finalState: liveState)
         liveState = nil
         sessionID = nil
+        watchdog.sessionID = nil
     }
 
     private func startTicker() {
@@ -107,6 +129,8 @@ final class SessionController: ObservableObject {
         if let current = rest, !current.isPaused, current.left <= 0 {
             rest = nil
             clearLiveRest()
+            // L'app è davanti: suona lei, e la sveglia di riserva si annulla.
+            RestAlarm.cancel()
             Feedback.restFinished()
         }
 
@@ -124,7 +148,9 @@ final class SessionController: ObservableObject {
                               endsAt: Date().addingTimeInterval(Double(seconds)),
                               pausedLeft: nil,
                               label: label)
+        Feedback.restStarted()
         updateLiveRest()
+        scheduleRestAlarm()
     }
 
     func addRest(_ seconds: Double) {
@@ -137,6 +163,7 @@ final class SessionController: ObservableObject {
         }
         rest = current
         updateLiveRest()
+        scheduleRestAlarm()
     }
 
     func toggleRestPause() {
@@ -149,11 +176,22 @@ final class SessionController: ObservableObject {
         }
         rest = current
         updateLiveRest()
+        scheduleRestAlarm()
     }
 
     func stopRest() {
         rest = nil
         clearLiveRest()
+        RestAlarm.cancel()
+    }
+
+    /// Riallinea la sveglia allo stato attuale: in pausa non deve suonare.
+    private func scheduleRestAlarm() {
+        guard let rest, !rest.isPaused else {
+            RestAlarm.cancel()
+            return
+        }
+        RestAlarm.schedule(endsAt: rest.endsAt, label: rest.label)
     }
 
     // MARK: - Live Activity
@@ -191,6 +229,7 @@ final class SessionController: ObservableObject {
         } else {
             rest = nil
         }
+        scheduleRestAlarm()
     }
 
     private func updateLiveRest() {

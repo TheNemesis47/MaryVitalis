@@ -40,6 +40,11 @@ struct MaryVitalisApp: App {
                 .preferredColorScheme(.dark)
                 .tint(Theme.defaultAccent)
                 .task {
+                    // A quest'ora nessun allenamento è in corso: la sessione
+                    // vive in memoria e l'app è appena partita. Quello che
+                    // trova acceso è avanzato da un'app chiusa a metà.
+                    WorkoutActivityManager.endOrphans()
+                    RestAlarm.cancel()
                     store.publishWidgetSnapshot()
                     // L'accesso con Apple può essere stato revocato dalle
                     // impostazioni di iOS mentre l'app era chiusa.

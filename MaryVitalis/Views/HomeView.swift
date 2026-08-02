@@ -112,10 +112,15 @@ struct HomeView: View {
 }
 
 /// Card della scheda, con l'accento personale come colore guida.
+///
+/// Senza `action` la card non contiene nessun bottone: è il caso in cui a
+/// gestire il tocco è chi la ospita (un `NavigationLink`). Prima l'azione era
+/// obbligatoria e chi non la voleva spegneva l'hit testing dell'intera card —
+/// il che spegneva anche il tocco del link e il menu contestuale.
 struct RoutineCard: View {
     let routine: Routine
     let daysDone: Int
-    var action: () -> Void
+    var action: (() -> Void)?
 
     var body: some View {
         Panel(padding: 18, radius: Theme.rXl) {
@@ -147,11 +152,26 @@ struct RoutineCard: View {
                     MetaPill(text: item, color: item.hasPrefix("✓") ? routine.accent : Theme.textDim)
                 }
 
-                Button("Apri la scheda →", action: action)
-                    .buttonStyle(PrimaryButtonStyle(accent: routine.accent))
-                    .frame(maxWidth: .infinity)
+                if let action {
+                    Button("Apri la scheda →", action: action)
+                        .buttonStyle(PrimaryButtonStyle(accent: routine.accent))
+                        .frame(maxWidth: .infinity)
+                } else {
+                    openLabel
+                }
             }
         }
+    }
+
+    /// Stessa forma del bottone, ma inerte: il tocco lo raccoglie il link.
+    private var openLabel: some View {
+        Text("Apri la scheda →")
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(Color(hex: "#0a0f1a"))
+            .padding(.horizontal, 18)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity)
+            .background(routine.accent, in: Capsule())
     }
 }
 

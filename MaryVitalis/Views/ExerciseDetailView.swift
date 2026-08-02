@@ -17,22 +17,24 @@ struct ExerciseCard: View {
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 0) {
-                ZStack(alignment: .topLeading) {
-                    RemoteImage(url: exercise.imageURL)
-                        .aspectRatio(1, contentMode: .fill)
-                        .frame(maxWidth: .infinity)
-                        .clipped()
-
-                    if let index {
-                        Text("\(index)")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundStyle(Color(hex: "#0a0f1a"))
-                            .frame(width: 24, height: 24)
-                            .background(Theme.defaultAccent, in: Circle())
-                            .padding(8)
+                // L'altezza del riquadro è decisa qui, **prima** di sapere che
+                // immagine ci finisce dentro: le GIF del dataset hanno
+                // proporzioni diverse e, lasciandole decidere, ogni card della
+                // riga veniva alta a modo suo.
+                RemoteImage(url: exercise.imageURL)
+                    .frame(maxWidth: .infinity, minHeight: 150, maxHeight: 150)
+                    .overlay(alignment: .topLeading) {
+                        if let index {
+                            Text("\(index)")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(Color(hex: "#0a0f1a"))
+                                .frame(width: 24, height: 24)
+                                .background(Theme.defaultAccent, in: Circle())
+                                .padding(8)
+                        }
                     }
-                }
-                .background(Color.white.opacity(0.03))
+                    .clipped()
+                    .background(Color.white.opacity(0.03))
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text(exercise.name)
@@ -40,6 +42,9 @@ struct ExerciseCard: View {
                         .foregroundStyle(Theme.text)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
+                        // Due righe sempre: così il blocco dei tag parte alla
+                        // stessa altezza anche per i nomi corti.
+                        .frame(height: 36, alignment: .topLeading)
 
                     if let note {
                         Text("⏱️ \(note)")
@@ -48,6 +53,8 @@ struct ExerciseCard: View {
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
                     }
+
+                    Spacer(minLength: 0)
 
                     HStack(spacing: 5) {
                         if let target = exercise.target {
@@ -59,8 +66,13 @@ struct ExerciseCard: View {
                     }
                 }
                 .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                // È questo blocco ad assorbire l'altezza in più della riga:
+                // i tag restano incollati in fondo invece di ballare.
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             }
+            // La card riempie la riga della griglia: i bordi delle vicine si
+            // allineano invece di fluttuare centrati.
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.rLg, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: Theme.rLg, style: .continuous).stroke(Theme.border, lineWidth: 1))
             .clipShape(RoundedRectangle(cornerRadius: Theme.rLg, style: .continuous))

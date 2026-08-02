@@ -13,6 +13,16 @@ enum WorkoutStore {
     static let defaultRest = 90
 }
 
+// Live Activity e notifiche locali: fuori da iOS non esistono, e qui interessa
+// solo che l'uscita dall'account le spenga.
+enum WorkoutActivityManager {
+    static func endOrphans(exceptSessionID: String? = nil) {}
+}
+
+enum RestAlarm {
+    static func cancel() {}
+}
+
 // Firebase non compila fuori da iOS: qui il cloud è assente, che è anche il
 // caso da verificare — l'app deve funzionare in locale senza configurazione.
 enum FirebaseService {
@@ -141,6 +151,22 @@ func run() async throws {
     let terzo = try await profile.signInWithApple(cloudUser: senzaNome, appleUserID: "apple-002")
     check("senza nome da Apple il profilo resta da nominare",
           terzo.isNew && terzo.account.displayName.isEmpty)
+
+    // Il profilo nato con Apple in una versione senza cloud: esiste solo qui,
+    // con l'Apple ID e senza identità Firebase. Rientrando deve essere lui a
+    // farsi avanti, non un secondo profilo vuoto con le schede altrove.
+    let vecchio = try profile.register(displayName: "Dario", email: nil, password: "",
+                                       appleUserID: "apple-003")
+    let ritorno = try await profile.signInWithApple(
+        cloudUser: AuthService.CloudUser(uid: "firebase-apple-003", displayName: "Dario"),
+        appleUserID: "apple-003"
+    )
+    check("il profilo Apple locale viene ritrovato",
+          !ritorno.isNew && ritorno.account.id == vecchio.id)
+    check("identita cloud aggiunta a quello esistente",
+          ritorno.account.firebaseUID == "firebase-apple-003")
+    check("nessun doppione creato",
+          profile.allAccounts.filter { $0.appleUserID == "apple-003" }.count == 1)
 
     print("\n[scheda di partenza]")
     let seed = RoutineFactory.starterTemplates[0]

@@ -93,6 +93,10 @@ final class ProfileStore: ObservableObject {
         SecureSessionStore.clear()
         signedInAccountID = nil
         viewedAccountID = nil
+        // Live Activity e sveglia del recupero appartengono a chi è appena
+        // uscito: lasciarle accese le mostrerebbe a chi entra dopo.
+        WorkoutActivityManager.endOrphans()
+        RestAlarm.cancel()
     }
 
     // MARK: - Creazione e gestione account
@@ -281,6 +285,32 @@ final class ProfileStore: ObservableObject {
             signIn(account: existing)
             await cloud?.start(for: existing)
             return (existing, false)
+        }
+
+        // Un profilo creato con Apple da una versione precedente vive solo su
+        // questo telefono: ha l'Apple ID ma non il `firebaseUID`. Senza questo
+        // controllo l'accesso ne creerebbe un secondo, vuoto, e le schede
+        // resterebbero nel primo — sotto gli occhi ma irraggiungibili.
+        var byApple = FetchDescriptor<UserAccount>(
+            predicate: #Predicate { $0.appleUserID == appleUserID }
+        )
+        byApple.fetchLimit = 1
+        if let local = try? context.fetch(byApple).first {
+            local.firebaseUID = uid
+            if local.email == nil { local.email = cloudUser.email }
+            local.updatedAt = .now
+            try? context.save()
+            signIn(account: local)
+
+            if let cloud {
+                await cloud.start(for: local)
+                await cloud.pushProfile(local)
+                // Le schede esistevano solo qui: da adesso hanno dove andare.
+                for routine in local.orderedRoutines {
+                    await cloud.pushRoutine(routine)
+                }
+            }
+            return (local, false)
         }
 
         // Il profilo può esistere già sul cloud (altro dispositivo).

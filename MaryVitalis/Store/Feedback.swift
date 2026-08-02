@@ -12,6 +12,9 @@ enum Feedback {
     }
 
     static func restFinished() { chime([880, 1170]) }
+    /// Due note che scendono: si distingue a orecchio dal trillo di fine
+    /// recupero senza bisogno di guardare il telefono.
+    static func restStarted() { chime([784, 523]) }
     static func sessionStarted() { chime([523, 784]) }
     static func waterReminder() { chime([660]) }
 
@@ -55,7 +58,11 @@ enum Feedback {
         }
 
         do {
-            try AVAudioSession.sharedInstance().setCategory(.ambient, options: [.mixWithOthers])
+            // `.playback` e non `.ambient`: in palestra il telefono sta quasi
+            // sempre in silenzioso, e con `.ambient` l'avviso di fine recupero
+            // non si sentirebbe mai. `.mixWithOthers` lascia suonare la musica.
+            try AVAudioSession.sharedInstance().setCategory(.playback,
+                                                            options: [.mixWithOthers, .duckOthers])
             try AVAudioSession.sharedInstance().setActive(true, options: [])
 
             let engine = AVAudioEngine()
@@ -67,6 +74,10 @@ enum Feedback {
                 DispatchQueue.main.async {
                     engine.stop()
                     if Feedback.engine === engine { Feedback.engine = nil; Feedback.player = nil }
+                    // Senza disattivare, la musica di chi ascolta resterebbe
+                    // abbassata fino alla chiusura dell'app.
+                    try? AVAudioSession.sharedInstance()
+                        .setActive(false, options: [.notifyOthersOnDeactivation])
                 }
             }
             player.play()
