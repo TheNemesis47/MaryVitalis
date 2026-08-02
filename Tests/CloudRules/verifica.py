@@ -310,6 +310,27 @@ try:
     st, _ = fs("GET", f"routines/{routine}", trainer_tok)
     check("dopo la revoca il trainer NON legge più la scheda", st == 403)
 
+    print("\n[ricollegarsi dopo una revoca]")
+    # Il caso che non funzionava: il legame esiste già, quindi la richiesta non
+    # è una create ma una update, e le regole la rifiutavano in silenzio.
+    st, _ = fs("PATCH", f"trainerLinks/{link}", trainer_tok,
+               {"fields": {"trainerId": s(trainer_id), "clientId": s(client_id),
+                           "status": s("pending")}})
+    check("il trainer può richiedere di nuovo", st == 200)
+
+    st, _ = fs("PATCH", f"trainerLinks/{link}", trainer_tok,
+               {"fields": {"trainerId": s(trainer_id), "clientId": s(client_id),
+                           "status": s("accepted")}})
+    check("ma continua a NON potersi auto-accettare", st == 403)
+
+    st, _ = fs("GET", f"routines/{routine}", trainer_tok)
+    check("in sospeso NON rilegge la scheda", st == 403)
+
+    st, _ = fs("PATCH", f"trainerLinks/{link}", client_tok,
+               {"fields": {"trainerId": s(trainer_id), "clientId": s(client_id),
+                           "status": s("accepted")}})
+    check("il cliente riaccetta", st == 200)
+
     print("\n[pulizia]")
     for gid, tok in ((gym_private, client_tok), (gym_shared, trainer_tok),
                      (gym_assigned, client_tok)):

@@ -81,6 +81,13 @@ struct PendingRequestsSection: View {
                 ForEach(requests, id: \.id) { request in
                     requestRow(request)
                 }
+
+                if let warning = profile.linkWarning {
+                    Label(warning, systemImage: "exclamationmark.triangle.fill")
+                        .font(.footnote)
+                        .foregroundStyle(Color(hex: "#fbbf24"))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
     }

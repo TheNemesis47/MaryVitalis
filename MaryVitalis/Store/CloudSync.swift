@@ -97,7 +97,10 @@ final class CloudSync: ObservableObject {
         return snapshot.data()?["userId"] as? String
     }
 
-    func pushLink(_ link: TrainerLink, trainerUID: String, clientUID: String) async {
+    /// Scrive il legame sul cloud. **Rilancia** l'errore invece di inghiottirlo:
+    /// una richiesta rifiutata dalle regole non deve comparire come inviata —
+    /// il trainer resterebbe ad aspettare una risposta che non può arrivare.
+    func pushLink(_ link: TrainerLink, trainerUID: String, clientUID: String) async throws {
         let id = FirestorePath.linkID(trainer: trainerUID, client: clientUID)
         do {
             try await FirebaseService.db.collection(FirestorePath.trainerLinks)
@@ -110,6 +113,7 @@ final class CloudSync: ObservableObject {
                 ], merge: true)
         } catch {
             lastError = error.localizedDescription
+            throw error
         }
     }
 

@@ -73,17 +73,26 @@ struct RoutinesView: View {
                 // Un trainer si allena anche lui: prima di scrivere una scheda
                 // va detto per chi è, altrimenti finisce nel profilo che
                 // capita di stare guardando.
-                if candidates.count > 1 {
+                if asksWhoFor {
                     Menu {
-                        ForEach(candidates, id: \.id) { person in
-                            Button {
-                                create(for: person)
-                            } label: {
-                                Label(person.id == profile.signedInAccountID
-                                      ? "Per me (\(person.displayName))"
-                                      : person.displayName,
-                                      systemImage: person.id == profile.signedInAccountID
-                                      ? "person.fill" : person.symbolName)
+                        Section("Per chi è la scheda?") {
+                            ForEach(candidates, id: \.id) { person in
+                                Button {
+                                    create(for: person)
+                                } label: {
+                                    Label(person.id == profile.signedInAccountID
+                                          ? "Per me (\(person.displayName))"
+                                          : person.displayName,
+                                          systemImage: person.id == profile.signedInAccountID
+                                          ? "person.fill" : person.symbolName)
+                                }
+                            }
+                        }
+                        // Se la lista dei clienti è vuota va detto perché,
+                        // altrimenti sembra che la scelta non esista.
+                        if candidates.count < 2 {
+                            Section {
+                                Text("Nessun cliente collegato: aggiungine uno dalle impostazioni, con il suo codice.")
                             }
                         }
                     } label: {
@@ -133,6 +142,13 @@ struct RoutinesView: View {
     private var candidates: [UserAccount] {
         guard let account = profile.account else { return [] }
         return [account] + profile.clients(of: account).filter { $0.id != account.id }
+    }
+
+    /// Un trainer va sempre interrogato, anche prima di avere clienti: è la
+    /// domanda a spiegargli che le schede si scrivono per qualcuno.
+    private var asksWhoFor: Bool {
+        guard let account = profile.account else { return false }
+        return candidates.count > 1 || account.userRole == .trainer || account.userRole == .admin
     }
 
     private func create(for person: UserAccount) {

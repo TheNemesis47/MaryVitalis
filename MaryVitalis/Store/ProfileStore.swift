@@ -10,6 +10,10 @@ import SwiftData
 @MainActor
 final class ProfileStore: ObservableObject {
     @Published private(set) var signedInAccountID: UUID?
+    /// L'ultimo intoppo nel collegamento trainer↔cliente, da mostrare a chi ha
+    /// appena toccato Accetta o Rifiuta: quelle azioni hanno una controparte
+    /// che aspetta, e un fallimento muto lascia due persone a fissare il vuoto.
+    @Published var linkWarning: String?
     @Published private(set) var viewedAccountID: UUID? {
         didSet { MaryVitalisShared.activeAccountID = viewedAccountID }
     }
@@ -473,13 +477,31 @@ final class ProfileStore: ObservableObject {
         // locale si crea con un segnaposto, e il nome vero arriva dopo.
         let client = await cloud.ensureAccount(firebaseUID: clientUID)
 
-        let link = TrainerLink(trainerAccountID: trainer.id,
+        // Se un legame con questa persona esiste già, si riusa quello: dopo una
+        // revoca si torna in sospeso. Inserirne un altro lascerebbe due legami
+        // per la stessa coppia, e uno dei due sbagliato per sempre.
+        let link: TrainerLink
+        if let clientID = client?.id, let existing = self.link(trainer: trainer.id, client: clientID) {
+            guard existing.linkStatus != .accepted else { throw LinkError.alreadyLinked }
+            existing.linkStatus = .pending
+            link = existing
+        } else {
+            link = TrainerLink(trainerAccountID: trainer.id,
                                clientAccountID: client?.id ?? UUID(),
                                status: .pending)
-        context.insert(link)
+            context.insert(link)
+        }
         try context.save()
 
-        await cloud.pushLink(link, trainerUID: trainerUID, clientUID: clientUID)
+        // Se il cloud rifiuta, il legame locale non deve restare a dire che la
+        // richiesta è partita: si rimette com'era e l'errore arriva alla UI.
+        do {
+            try await cloud.pushLink(link, trainerUID: trainerUID, clientUID: clientUID)
+        } catch {
+            link.linkStatus = .revoked
+            try? context.save()
+            throw error
+        }
         return link
     }
 
@@ -574,11 +596,25 @@ final class ProfileStore: ObservableObject {
 
     /// Senza questo, l'accettazione del cliente resterebbe sul suo telefono e
     /// il trainer non vedrebbe mai comparire il cliente.
+    ///
+    /// Quando non c'è modo di mandarla — nessun cloud, o una delle due parti è
+    /// un profilo solo locale — lo si dice invece di fingere: la risposta è
+    /// registrata qui, ma dall'altra parte non arriverà.
     private func pushLinkToCloud(_ link: TrainerLink) {
         guard let cloud,
               let trainerUID = account(id: link.trainerAccountID)?.firebaseUID,
-              let clientUID = account(id: link.clientAccountID)?.firebaseUID else { return }
-        Task { await cloud.pushLink(link, trainerUID: trainerUID, clientUID: clientUID) }
+              let clientUID = account(id: link.clientAccountID)?.firebaseUID else {
+            linkWarning = "La risposta è salvata su questo telefono ma non è arrivata all'altra persona: manca il collegamento al cloud."
+            return
+        }
+        Task {
+            do {
+                try await cloud.pushLink(link, trainerUID: trainerUID, clientUID: clientUID)
+                linkWarning = nil
+            } catch {
+                linkWarning = error.localizedDescription
+            }
+        }
     }
 
     /// Rigenera il codice: serve a chi l'ha dettato alla persona sbagliata.
