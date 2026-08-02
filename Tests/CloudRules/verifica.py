@@ -318,6 +318,13 @@ try:
                            "status": s("pending")}})
     check("il trainer può richiedere di nuovo", st == 200)
 
+    # Rimandare una richiesta ancora in sospeso: capita quando il cliente non
+    # l'ha vista o ha cambiato codice. Prima rispondeva 403.
+    st, _ = fs("PATCH", f"trainerLinks/{link}", trainer_tok,
+               {"fields": {"trainerId": s(trainer_id), "clientId": s(client_id),
+                           "status": s("pending")}})
+    check("il trainer può rimandare una richiesta in sospeso", st == 200)
+
     st, _ = fs("PATCH", f"trainerLinks/{link}", trainer_tok,
                {"fields": {"trainerId": s(trainer_id), "clientId": s(client_id),
                            "status": s("accepted")}})

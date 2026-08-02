@@ -116,12 +116,13 @@ service cloud.firestore {
 
       // Accettare tocca solo al cliente. Revocare a entrambi.
       //
-      // Il trainer può anche **richiedere di nuovo** dopo una revoca: il
-      // legame è già stato creato una volta, quindi non è più una `create`, ed
-      // è un caso normale — ci si stacca e ci si ricollega. Senza questa riga
-      // la richiesta veniva rifiutata in silenzio e il cliente non la vedeva
-      // mai arrivare. Resta fermo il punto che conta: il trainer non può
-      // scrivere 'accepted', quello lo fa solo chi dà il consenso.
+      // Il trainer può anche **richiedere di nuovo**: dopo una revoca, o
+      // rimandando una richiesta che è ancora in sospeso — capita di rifarla
+      // perché il cliente non l'ha vista, o dopo che ha cambiato codice. Il
+      // legame è già stato creato una volta, quindi non è più una `create`, e
+      // senza questo la seconda richiesta veniva rifiutata: "missing or
+      // insufficient permissions". Resta fermo il punto che conta: il trainer
+      // non può scrivere 'accepted', quello lo fa solo chi dà il consenso.
       allow update: if signedIn()
         && request.resource.data.trainerId == resource.data.trainerId
         && request.resource.data.clientId == resource.data.clientId
@@ -131,7 +132,7 @@ service cloud.firestore {
           || (request.auth.uid == resource.data.trainerId
             && request.resource.data.status == 'revoked')
           || (request.auth.uid == resource.data.trainerId
-            && resource.data.status == 'revoked'
+            && resource.data.status in ['revoked', 'pending']
             && request.resource.data.status == 'pending')
         );
 

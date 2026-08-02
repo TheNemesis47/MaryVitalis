@@ -441,6 +441,9 @@ final class ProfileStore: ObservableObject {
         case unknownCode
         case cannotLinkToSelf
         case alreadyLinked
+        /// Il cloud ha detto di no. Il motivo tecnico resta in `CloudSync.lastError`:
+        /// "missing or insufficient permissions" su uno schermo non aiuta nessuno.
+        case cloudRefused
 
         var errorDescription: String? {
             switch self {
@@ -449,6 +452,8 @@ final class ProfileStore: ObservableObject {
             case .unknownCode: "Nessun profilo con questo codice."
             case .cannotLinkToSelf: "Non puoi aggiungere te stesso come cliente."
             case .alreadyLinked: "Questo cliente è già collegato."
+            case .cloudRefused:
+                "La richiesta non è stata accettata. Se questa persona ti aveva già accettato siete già collegati; altrimenti riprova fra un momento."
             }
         }
     }
@@ -500,7 +505,7 @@ final class ProfileStore: ObservableObject {
         } catch {
             link.linkStatus = .revoked
             try? context.save()
-            throw error
+            throw LinkError.cloudRefused
         }
         return link
     }

@@ -39,7 +39,17 @@ struct AnimatedImageView: View {
             do {
                 let data = try await RemoteMediaCache.shared.data(for: url)
                 try Task.checkCancellation()
-                guard let decoded = UIImage.animated(data: data) else {
+                // Decodificare una GIF vuol dire ricostruirne tutti i
+                // fotogrammi, e `.task` di una vista gira sul main actor: con
+                // ventiquattro card in griglia l'interfaccia restava ferma per
+                // secondi, di solito appena tornati nell'app. Il lavoro va
+                // fuori dal thread che disegna.
+                let decoded = await Task.detached(priority: .userInitiated) {
+                    DecodedImage(image: UIImage.animated(data: data))
+                }.value.image
+                try Task.checkCancellation()
+
+                guard let decoded else {
                     await RemoteMediaCache.shared.remove(url)
                     failed = true
                     return
@@ -59,6 +69,12 @@ struct AnimatedImageView: View {
             }
         }
     }
+}
+
+/// Fa attraversare al risultato il confine fra i due task: `UIImage` non è
+/// `Sendable`, ma questa è appena stata creata e non la sta guardando nessuno.
+private struct DecodedImage: @unchecked Sendable {
+    let image: UIImage?
 }
 
 private actor RemoteMediaCache {
