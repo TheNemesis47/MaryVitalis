@@ -507,10 +507,21 @@ Ha trovato un difetto reale: cancellando un giorno o un esercizio, gli indici
 restavano bucati perché l'oggetto cancellato resta nella relazione del genitore
 finché non si salva. Corretto staccando la relazione prima della cancellazione.
 
-**Fase 4 — Editor mappa**
-12. Conversione dei 53 attrezzi in catalogo JSON.
-13. `GymListView`, `GymEditorView` con griglia drag & drop.
-14. Collegamento esercizio→attrezzo modificabile.
+**Fase 4 — Editor mappa** ✅ *fatta*
+12. ✅ I 53 attrezzi del rilievo diventano il **catalogo** da cui chiunque pesca
+    (`GymFactory.catalog`), con istruzioni e avvertenze già scritte.
+13. ✅ `GymListView` (sedi, sede attiva, creazione da catalogo o vuota) e
+    `GymEditorView` (griglia a celle, aggiunta, spostamento, rimozione),
+    `EquipmentPickerSheet`, `EquipmentEditorSheet`.
+14. ✅ `SpatialGrid` estratto da `GymMapView`: la griglia si calcola in un posto
+    solo, altrimenti editor e mappa divergono. La mappa legge le sedi
+    dell'utente e ricade sul rilievo FitActive finché non ne ha create.
+
+*Verifica:* 6 controlli nel banco di prova sull'estrazione della griglia — 53
+attrezzi tutti posizionati, nessuna cella occupata due volte, righe contigue.
+
+*Non fatto:* il collegamento esercizio→attrezzo resta l'euristica su nome in
+`GymMap.queryToMachines`; renderlo modificabile dall'utente è ancora aperto.
 
 **Fase 5 — Trainer e cloud**
 15. ✅ Codice invito, richiesta di collegamento, consenso del cliente, revoca da

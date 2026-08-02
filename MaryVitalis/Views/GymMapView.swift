@@ -35,14 +35,27 @@ struct GymMapView: View {
     var showsDismissButton = false
 
     @AppStorage("mv:selected-gym") private var selectedGymID = GymCatalog.defaultLocation.id
+    @EnvironmentObject private var profile: ProfileStore
+    @State private var showGyms = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @State private var selected: GymMachine?
     @State private var searchText = ""
 
+    /// Le sedi del profilo consultato. Finché non ne ha create, resta il
+    /// rilievo di FitActive come esempio: una mappa vuota non aiuterebbe.
+    private var availableLocations: [GymLocation] {
+        let mine = (profile.viewedAccount?.gyms ?? [])
+            .sorted { $0.sortIndex < $1.sortIndex }
+            .map(\.asLocation)
+        return mine.isEmpty ? GymCatalog.all : mine
+    }
+
     private var gym: GymLocation {
-        GymCatalog.location(id: selectedGymID) ?? GymCatalog.defaultLocation
+        availableLocations.first { $0.id == selectedGymID }
+            ?? availableLocations.first
+            ?? GymCatalog.defaultLocation
     }
 
     private var accent: Color { highlight?.accent ?? Theme.defaultAccent }
@@ -93,6 +106,12 @@ struct GymMapView: View {
                     .accessibilityHint("Chiude la mappa e torna alla scheda")
                 }
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { showGyms = true } label: {
+                    Image(systemName: "square.grid.2x2")
+                }
+                .accessibilityLabel("Gestisci le sedi")
+            }
         }
         .sheet(item: $selected) { machine in
             NavigationStack { MachineDetailView(machine: machine, gym: gym) }
@@ -102,6 +121,9 @@ struct GymMapView: View {
             searchText = ""
             selected = nil
         }
+        .sheet(isPresented: $showGyms) {
+            GymListView().environmentObject(profile)
+        }
     }
 
     // MARK: - Sede
@@ -109,7 +131,7 @@ struct GymMapView: View {
     private var locationHeader: some View {
         Menu {
             Picker("Palestra", selection: $selectedGymID) {
-                ForEach(GymCatalog.all) { location in
+                ForEach(availableLocations) { location in
                     Text(location.displayName).tag(location.id)
                 }
             }
@@ -407,115 +429,31 @@ struct GymMapView: View {
     /// Converte il rilievo continuo in una pianta sparsa di quattro corsie.
     /// La griglia viene sempre costruita sull'intero catalogo: anche durante
     /// una ricerca gli elementi visibili non cambiano colonna.
+    /// Converte il rilievo in una pianta sparsa di quattro corsie.
+    /// La griglia si costruisce sempre sull'intero catalogo: anche durante una
+    /// ricerca gli attrezzi visibili non cambiano colonna.
     private var spatialFloorRows: [EquipmentFloorRow] {
         let visibleIDs = Set(filteredMachines.map(\.id))
-        let rows = spatialRows(for: gym.machines)
+        let layout = SpatialGrid.layout(machines: gym.machines, zones: gym.zones)
+        let byID = Dictionary(gym.machines.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+
         var floorRows: [EquipmentFloorRow] = []
+        for rowIndex in 0..<layout.rowCount {
+            let inRow = layout.placements.filter { $0.value.row == rowIndex }
+            guard inRow.contains(where: { visibleIDs.contains($0.key) }) else { continue }
 
-        for (rowIndex, row) in rows.enumerated() {
-            let ordered = row.sorted { $0.center.x < $1.center.x }
-            let columns = assignedColumns(for: ordered)
-            let positioned = Dictionary(uniqueKeysWithValues: zip(columns, ordered))
-
-            guard positioned.values.contains(where: { visibleIDs.contains($0.id) }) else { continue }
-
-            let machines = (0..<4).map { column in
-                positioned[column].flatMap { visibleIDs.contains($0.id) ? $0 : nil }
+            let machines = (0..<SpatialGrid.columns).map { column -> GymMachine? in
+                guard let id = inRow.first(where: { $0.value.column == column })?.key,
+                      visibleIDs.contains(id) else { return nil }
+                return byID[id]
             }
             floorRows.append(EquipmentFloorRow(
                 id: "\(gym.id)-r\(rowIndex)",
                 machines: machines,
-                height: floorRowHeight(at: rowIndex, rows: rows)
+                height: layout.rowHeights[rowIndex]
             ))
         }
-
         return floorRows
-    }
-
-    private func floorRowHeight(at index: Int, rows: [[GymMachine]]) -> CGFloat {
-        guard index + 1 < rows.count else { return 108 }
-        let currentY = rows[index].map(\.center.y).reduce(0, +) / CGFloat(rows[index].count)
-        let nextY = rows[index + 1].map(\.center.y).reduce(0, +) / CGFloat(rows[index + 1].count)
-        let gap = max(1, nextY - currentY)
-        return min(144, max(104, gap * 2.35))
-    }
-
-    /// Raggruppa gli attrezzi che nel rilievo si trovano sulla stessa fascia
-    /// orizzontale. Il limite è proporzionale all'altezza della palestra, così
-    /// la logica resta valida anche per sedi con scale di coordinate diverse.
-    private func spatialRows(for machines: [GymMachine]) -> [[GymMachine]] {
-        let bounds = spatialBounds
-        let rowTolerance = max(12, bounds.height * 0.03)
-        let ordered = machines.sorted {
-            if abs($0.center.y - $1.center.y) > 0.5 { return $0.center.y < $1.center.y }
-            return $0.center.x < $1.center.x
-        }
-        var rows: [[GymMachine]] = []
-
-        for machine in ordered {
-            if let lastIndex = rows.indices.last {
-                let row = rows[lastIndex]
-                let averageY = row.map(\.center.y).reduce(0, +) / CGFloat(row.count)
-                if abs(machine.center.y - averageY) <= rowTolerance, row.count < 4 {
-                    rows[lastIndex].append(machine)
-                    continue
-                }
-            }
-            rows.append([machine])
-        }
-
-        return rows
-    }
-
-    /// Sceglie quali colonne occupare minimizzando la distanza dalle X
-    /// originali. Per esempio, posizioni sinistra/sinistra/destra producono
-    /// [0, 1, 3], lasciando intenzionalmente vuota la terza colonna.
-    private func assignedColumns(for machines: [GymMachine]) -> [Int] {
-        guard !machines.isEmpty else { return [] }
-        let bounds = spatialBounds
-        let width = max(1, bounds.width)
-        let targets = machines.map { machine in
-            min(3, max(0, ((machine.center.x - bounds.minX) / width) * 4 - 0.5))
-        }
-        let combinations = columnCombinations(selecting: machines.count)
-
-        return combinations.min { left, right in
-            assignmentScore(left, targets: targets) < assignmentScore(right, targets: targets)
-        } ?? Array(0..<machines.count)
-    }
-
-    private var spatialBounds: CGRect {
-        let zoneBounds = gym.zones.reduce(CGRect.null) { $0.union($1.frame) }
-        if !zoneBounds.isNull, zoneBounds.width > 0, zoneBounds.height > 0 {
-            return zoneBounds
-        }
-        return gym.machines.reduce(CGRect.null) { $0.union($1.rect) }
-    }
-
-    private func assignmentScore(_ columns: [Int], targets: [CGFloat]) -> CGFloat {
-        zip(columns, targets).reduce(0) { score, pair in
-            let distance = CGFloat(pair.0) - pair.1
-            return score + distance * distance
-        }
-    }
-
-    private func columnCombinations(selecting count: Int) -> [[Int]] {
-        switch count {
-        case 1:
-            return (0..<4).map { [$0] }
-        case 2:
-            return (0..<4).flatMap { first in
-                ((first + 1)..<4).map { [first, $0] }
-            }
-        case 3:
-            return (0..<4).flatMap { first in
-                ((first + 1)..<4).flatMap { second in
-                    ((second + 1)..<4).map { [first, second, $0] }
-                }
-            }
-        default:
-            return [[0, 1, 2, 3]]
-        }
     }
 
     private func compactMuscleSummary(for machine: GymMachine) -> String {

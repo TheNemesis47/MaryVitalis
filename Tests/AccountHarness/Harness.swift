@@ -293,6 +293,21 @@ func run() async throws {
     profile.delete(nuova)
     profile.signIn(account: anna)
 
+    print("\n[griglia della palestra]")
+    let machines = GymCatalog.defaultLocation.machines
+    let zones = GymCatalog.defaultLocation.zones
+    let layout = SpatialGrid.layout(machines: machines, zones: zones)
+    check("tutti gli attrezzi posizionati", layout.placements.count == machines.count)
+    check("nessuna colonna fuori dalle quattro corsie",
+          layout.placements.values.allSatisfy { $0.column >= 0 && $0.column < SpatialGrid.columns })
+    check("righe contigue da zero",
+          Set(layout.placements.values.map(\.row)) == Set(0..<layout.rowCount))
+    check("un'altezza per riga", layout.rowHeights.count == layout.rowCount)
+    let occupied = layout.placements.values.map { "\($0.row)-\($0.column)" }
+    check("nessuna cella occupata due volte", Set(occupied).count == occupied.count)
+    check("stabile fra due chiamate",
+          SpatialGrid.layout(machines: machines, zones: zones).placements.count == layout.placements.count)
+
     print("\n[cancellazione account]")
     let routineID = anna.orderedRoutines.first!.id
     let dayID = anna.orderedRoutines.first!.orderedDays.first!.id
