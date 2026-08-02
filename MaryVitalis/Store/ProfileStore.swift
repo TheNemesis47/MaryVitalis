@@ -262,30 +262,52 @@ final class ProfileStore: ObservableObject {
     /// ritrova quello già collegato a quell'Apple ID.
     /// Ritorna `true` quando il profilo è appena nato, così la UI sa se
     /// proseguire con l'onboarding della prima scheda.
+    /// Accesso con Apple, passando da Firebase.
+    ///
+    /// Prima creava un profilo soltanto locale: il bottone prometteva di
+    /// sincronizzare fra i dispositivi e non lo faceva, e quel profilo non
+    /// poteva nemmeno essere seguito da un trainer. Ora l'identità è l'`uid`
+    /// di Firebase, come per gli account con email e password.
     @discardableResult
-    func signInWithApple(_ credential: AppleSignIn.Credential) throws -> (account: UserAccount, isNew: Bool) {
-        let appleID = credential.userID
-
-        var descriptor = FetchDescriptor<UserAccount>(
-            predicate: #Predicate { $0.appleUserID == appleID }
-        )
+    func signInWithApple(cloudUser: AuthService.CloudUser,
+                         appleUserID: String) async throws -> (account: UserAccount, isNew: Bool) {
+        let uid = cloudUser.uid
+        var descriptor = FetchDescriptor<UserAccount>(predicate: #Predicate { $0.firebaseUID == uid })
         descriptor.fetchLimit = 1
 
         if let existing = try? context.fetch(descriptor).first {
+            existing.appleUserID = appleUserID
+            try? context.save()
             signIn(account: existing)
+            await cloud?.start(for: existing)
             return (existing, false)
         }
 
-        // Nome ed email arrivano solo ora: se non li salvo, sono persi.
-        // Con "Nascondi la mia email" l'indirizzo è un alias di Apple, quindi
-        // non serve a identificare la persona e non lo conservo.
-        let account = try register(
-            displayName: credential.fullName ?? "Il mio profilo",
-            email: credential.isPrivateRelayEmail ? nil : credential.email,
-            password: "",
-            appleUserID: appleID
+        // Il profilo può esistere già sul cloud (altro dispositivo).
+        if let fetched = await cloud?.ensureAccount(firebaseUID: uid) {
+            fetched.appleUserID = appleUserID
+            try? context.save()
+            signIn(account: fetched)
+            await cloud?.start(for: fetched)
+            return (fetched, false)
+        }
+
+        // Apple restituisce nome ed email **solo alla primissima**
+        // autorizzazione. Le volte successive manda solo l'identificativo:
+        // lasciare un segnaposto tipo "Il mio profilo" sarebbe peggio che
+        // chiederlo, quindi il nome resta vuoto e l'onboarding lo domanda.
+        let account = UserAccount(
+            displayName: cloudUser.displayName ?? "",
+            email: cloudUser.email,
+            appleUserID: appleUserID,
+            firebaseUID: uid,
+            accentHex: Self.nextAccentHex(taken: allAccounts.map(\.accentHex))
         )
+        context.insert(account)
+        try context.save()
+
         signIn(account: account)
+        await cloud?.start(for: account)
         return (account, true)
     }
 
@@ -294,6 +316,7 @@ final class ProfileStore: ObservableObject {
     func validateAppleCredentialIfNeeded() async {
         guard let account, let appleUserID = account.appleUserID else { return }
         if await !AppleSignIn.isStillAuthorized(userID: appleUserID) {
+            AuthService.signOut()
             signOut()
         }
     }
@@ -353,6 +376,12 @@ final class ProfileStore: ObservableObject {
     /// Firebase. L'ordine conta — cancellando prima l'utente, il token non
     /// varrebbe più e i dati resterebbero su Firestore senza padrone.
     func deleteAccountEverywhere(_ account: UserAccount) async throws {
+        // Apple lo pretende, e senza revoca il prossimo accesso con Apple
+        // verrebbe letto come un ritorno: nessun nome, nessuna email, e un
+        // profilo anonimo al posto di una registrazione.
+        if account.appleUserID != nil {
+            await AuthService.revokeAppleAccess()
+        }
         if let cloud, let uid = account.firebaseUID {
             await cloud.deleteCloudData(uid: uid, inviteCode: account.inviteCode)
         }

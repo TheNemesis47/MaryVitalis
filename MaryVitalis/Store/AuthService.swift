@@ -72,6 +72,14 @@ enum AuthService {
         return sha256(nonce)
     }
 
+    /// Il codice di autorizzazione dell'ultimo accesso con Apple.
+    ///
+    /// Serve a **revocare** il permesso quando l'utente cancella l'account:
+    /// Apple lo pretende, e senza revoca il prossimo "Accedi con Apple"
+    /// verrebbe trattato come un ritorno invece che come una registrazione —
+    /// niente nome, niente email, e un profilo senza identità.
+    private(set) nonisolated(unsafe) static var lastAuthorizationCode: String?
+
     static func signIn(with authorization: ASAuthorization) async throws -> CloudUser {
         try requireConfigured()
         guard let appleCredential = authorization.credential as? ASAuthorizationAppleIDCredential,
@@ -80,6 +88,9 @@ enum AuthService {
               let nonce = currentNonce else {
             throw AuthError.appleTokenMissing
         }
+
+        lastAuthorizationCode = appleCredential.authorizationCode
+            .flatMap { String(data: $0, encoding: .utf8) }
 
         let credential = OAuthProvider.appleCredential(withIDToken: token,
                                                        rawNonce: nonce,
@@ -105,6 +116,14 @@ enum AuthService {
 
     static func deleteCloudUser() async throws {
         try await Auth.auth().currentUser?.delete()
+    }
+
+    /// Revoca il permesso concesso ad Apple. Va fatta **prima** di cancellare
+    /// l'utente, perché richiede una sessione valida.
+    static func revokeAppleAccess() async {
+        guard let code = lastAuthorizationCode else { return }
+        try? await Auth.auth().revokeToken(withAuthorizationCode: code)
+        lastAuthorizationCode = nil
     }
 
     // MARK: - Nonce

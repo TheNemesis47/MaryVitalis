@@ -68,6 +68,8 @@ struct LoginView: View {
         .fullScreenCover(isPresented: $appleAccountIsNew) {
             if let account = profile.account {
                 StarterRoutineView(account: account) { appleAccountIsNew = false }
+                    .environmentObject(cloud)
+                    .environmentObject(profile)
             }
         }
     }
@@ -189,8 +191,12 @@ struct LoginView: View {
 
             SignInWithAppleButton(.signIn) { request in
                 request.requestedScopes = [.fullName, .email]
+                // Impedisce che qualcuno riusi un token Apple intercettato:
+                // Apple lo firma dentro il token e Firebase verifica che
+                // corrisponda a quello generato per *questa* richiesta.
+                request.nonce = AuthService.makeAppleNonce()
             } onCompletion: { result in
-                handleApple(result)
+                Task { await handleApple(result) }
             }
             .signInWithAppleButtonStyle(.white)
             .frame(height: 50)
@@ -209,13 +215,15 @@ struct LoginView: View {
         }
     }
 
-    private func handleApple(_ result: Result<ASAuthorization, Error>) {
+    private func handleApple(_ result: Result<ASAuthorization, Error>) async {
         appleError = nil
         switch result {
         case .success(let authorization):
             do {
-                let credential = try AppleSignIn.credential(from: authorization)
-                let outcome = try profile.signInWithApple(credential)
+                let appleID = try AppleSignIn.credential(from: authorization).userID
+                let cloudUser = try await AuthService.signIn(with: authorization)
+                let outcome = try await profile.signInWithApple(cloudUser: cloudUser,
+                                                                appleUserID: appleID)
                 Feedback.success()
                 appleAccountIsNew = outcome.isNew
             } catch {

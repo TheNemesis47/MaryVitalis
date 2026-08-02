@@ -20,7 +20,16 @@ enum FirebaseService {
 }
 
 enum AuthService {
-    struct CloudUser { let uid: String; let email: String?; let displayName: String? }
+    struct CloudUser {
+        let uid: String
+        var email: String? = nil
+        let displayName: String?
+        init(uid: String, fullName: String? = nil, email: String? = nil, displayName: String?) {
+            self.uid = uid
+            self.email = email
+            self.displayName = displayName
+        }
+    }
     static func signUp(email: String, password: String, displayName: String) async throws -> CloudUser {
         CloudUser(uid: UUID().uuidString, email: email, displayName: displayName)
     }
@@ -29,6 +38,7 @@ enum AuthService {
     }
     static func deleteCloudUser() async throws {}
     static func signOut() {}
+    static func revokeAppleAccess() async {}
 }
 
 @MainActor
@@ -59,7 +69,7 @@ func check(_ name: String, _ condition: Bool) {
 }
 
 @MainActor
-func run() throws {
+func run() async throws {
 
 
 
@@ -111,16 +121,26 @@ func run() throws {
           (try? profile.changePassword(for: anna, current: "nuovapassword", new: "corta")) == nil)
 
     print("\n[Sign in with Apple]")
-    let credential = AppleSignIn.Credential(userID: "apple-001",
-                                            fullName: "Carlo Verdi",
-                                            email: "carlo@privaterelay.appleid.com")
-    let first = try profile.signInWithApple(credential)
+    let appleUser = AuthService.CloudUser(uid: "firebase-apple-001",
+                                          fullName: nil,
+                                          displayName: "Carlo Verdi")
+    let first = try await profile.signInWithApple(cloudUser: appleUser, appleUserID: "apple-001")
     check("profilo Apple creato", first.isNew)
-    check("email di relay non conservata", first.account.email == nil)
+    check("nome preso da Apple", first.account.displayName == "Carlo Verdi")
+    check("identita cloud collegata", first.account.firebaseUID == "firebase-apple-001")
     check("nessuna password per l'account Apple", !CredentialStore.hasPassword(for: first.account.id))
-    let second = try profile.signInWithApple(AppleSignIn.Credential(userID: "apple-001",
-                                                                    fullName: nil, email: nil))
-    check("secondo accesso ritrova lo stesso profilo", !second.isNew && second.account.id == first.account.id)
+
+    let second = try await profile.signInWithApple(cloudUser: appleUser, appleUserID: "apple-001")
+    check("secondo accesso ritrova lo stesso profilo",
+          !second.isNew && second.account.id == first.account.id)
+
+    // Apple manda il nome solo la primissima volta: senza, il profilo nasce
+    // senza nome e l'onboarding lo chiede, invece di inventarne uno.
+    let senzaNome = AuthService.CloudUser(uid: "firebase-apple-002",
+                                          fullName: nil, displayName: nil)
+    let terzo = try await profile.signInWithApple(cloudUser: senzaNome, appleUserID: "apple-002")
+    check("senza nome da Apple il profilo resta da nominare",
+          terzo.isNew && terzo.account.displayName.isEmpty)
 
     print("\n[scheda di partenza]")
     let seed = RoutineFactory.starterTemplates[0]
@@ -319,7 +339,7 @@ func run() throws {
 @main
 enum Main {
     static func main() async throws {
-        try await MainActor.run { try run() }
+        try await run()
         print("\n=== \(passed) passati, \(failed) falliti ===")
         if failed > 0 { exit(1) }
     }

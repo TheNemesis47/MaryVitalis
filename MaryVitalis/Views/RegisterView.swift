@@ -85,6 +85,7 @@ struct RegisterView: View {
         )) {
             if let createdAccount {
                 StarterRoutineView(account: createdAccount) { dismiss() }
+                    .environmentObject(profile)
             }
         }
     }
@@ -200,15 +201,38 @@ struct StarterRoutineView: View {
 
     @Environment(\.modelContext) private var context
     @EnvironmentObject private var cloud: CloudSync
+    @EnvironmentObject private var profile: ProfileStore
     @State private var busy = false
+    @State private var name = ""
+
+    /// Apple manda nome ed email **solo alla primissima** autorizzazione. Chi
+    /// arriva qui senza nome lo ha già concesso in passato: glielo si chiede,
+    /// invece di appiccicargli un segnaposto.
+    private var needsName: Bool { account.displayName.isEmpty }
+    private var canProceed: Bool {
+        !needsName || !name.trimmingCharacters(in: .whitespaces).isEmpty
+    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     PageHeader(eyebrow: "PRIMO PASSO",
-                               title: "Da dove partiamo?",
-                               subtitle: "Scegli una scheda di esempio da adattare, oppure creane una vuota e riempila tu.")
+                               title: needsName ? "Come ti chiami?" : "Da dove partiamo?",
+                               subtitle: needsName
+                               ? "Apple non ci ha passato il tuo nome. Scegli come vuoi comparire nell'app, poi scegli da quale scheda partire."
+                               : "Scegli una scheda di esempio da adattare, oppure creane una vuota e riempila tu.")
+
+                    if needsName {
+                        TextField("Il tuo nome", text: $name)
+                            .textContentType(.name)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 12)
+                            .background(Theme.surface,
+                                        in: RoundedRectangle(cornerRadius: Theme.rMd, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: Theme.rMd, style: .continuous)
+                                .stroke(Theme.border, lineWidth: 1))
+                    }
 
                     ForEach(Array(RoutineFactory.starterTemplates.enumerated()), id: \.offset) { _, seed in
                         templateCard(seed)
@@ -217,7 +241,8 @@ struct StarterRoutineView: View {
                     Button("Parto da una scheda vuota") { createEmpty() }
                         .buttonStyle(GhostButtonStyle())
                         .frame(maxWidth: .infinity)
-                        .disabled(busy)
+                        .disabled(busy || !canProceed)
+                        .opacity(canProceed ? 1 : 0.5)
                 }
                 .padding(18)
             }
@@ -260,7 +285,8 @@ struct StarterRoutineView: View {
             }
         }
         .buttonStyle(.plain)
-        .disabled(busy)
+        .disabled(busy || !canProceed)
+        .opacity(canProceed ? 1 : 0.5)
     }
 
     private func create(from seed: SeedRoutine) {
@@ -283,6 +309,11 @@ struct StarterRoutineView: View {
     }
 
     private func finish(routine: Routine) {
+        if needsName {
+            account.displayName = name.trimmingCharacters(in: .whitespaces)
+            account.updatedAt = .now
+            Task { await cloud.pushProfile(account) }
+        }
         try? context.save()
         Feedback.success()
         // La scheda deve arrivare sul cloud, altrimenti su un altro dispositivo
