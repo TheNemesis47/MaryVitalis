@@ -7,6 +7,7 @@ struct ExercisesView: View {
     }
 
     @EnvironmentObject private var library: ExerciseLibrary
+    @EnvironmentObject private var profile: ProfileStore
     @Binding var preset: Preset?
 
     @State private var search = ""
@@ -74,7 +75,9 @@ struct ExercisesView: View {
         .pageBackground()
         .navigationTitle("Esercizi")
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(item: $detail) { ExerciseDetailView(detail: $0) }
+        .sheet(item: $detail) {
+            ExerciseDetailView(detail: $0).environmentObject(profile)
+        }
         .onChange(of: search) { _, _ in page = 1 }
         .onChange(of: bodyPart) { _, _ in page = 1; target = "" }
         .onChange(of: target) { _, _ in page = 1 }

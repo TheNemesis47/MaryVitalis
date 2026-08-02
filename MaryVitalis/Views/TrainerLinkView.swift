@@ -126,6 +126,84 @@ struct PendingRequestsSection: View {
     }
 }
 
+/// Chi ti segue. Dall'altra parte del legame c'era il vuoto: si accettava una
+/// richiesta e poi nell'app non compariva da nessuna parte che qualcuno stesse
+/// leggendo le tue schede — che è esattamente la cosa da dire a chiare lettere.
+struct TrainersSection: View {
+    let account: UserAccount
+
+    @EnvironmentObject private var profile: ProfileStore
+    @State private var revoking: TrainerLink?
+
+    var body: some View {
+        let trainers = profile.trainers(of: account)
+
+        if !trainers.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(trainers.count == 1 ? "Il tuo trainer" : "I tuoi trainer")
+                    .font(.headline)
+                    .foregroundStyle(Theme.text)
+
+                ForEach(trainers, id: \.id) { trainer in
+                    trainerRow(trainer)
+                }
+
+                Text("Vede le tue schede e il tuo recap, e può scriverti nuove schede. Puoi togliergli l'accesso quando vuoi.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.textFaint)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .alert("Togliere l'accesso a \(revoking.flatMap { profile.account(id: $0.trainerAccountID)?.displayName } ?? "")?",
+                   isPresented: Binding(get: { revoking != nil },
+                                        set: { if !$0 { revoking = nil } })) {
+                Button("Annulla", role: .cancel) { revoking = nil }
+                Button("Togli l'accesso", role: .destructive) {
+                    if let revoking { try? profile.revoke(revoking) }
+                    revoking = nil
+                    Feedback.tap()
+                }
+            } message: {
+                Text("Smette di vedere schede e recap. Le schede che ti ha scritto restano tue.")
+            }
+        }
+    }
+
+    private func trainerRow(_ trainer: UserAccount) -> some View {
+        let accent = Color(hex: "#f59e0b")
+        return Panel(padding: 13, radius: Theme.rLg) {
+            HStack(spacing: 12) {
+                Image(systemName: "figure.strengthtraining.traditional")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(accent)
+                    .frame(width: 38, height: 38)
+                    .background(accent.opacity(0.12), in: Circle())
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(trainer.displayName.isEmpty ? "Il tuo trainer" : trainer.displayName)
+                        .font(.system(size: 15.5, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                    Text("ti segue")
+                        .font(.caption)
+                        .foregroundStyle(Theme.textFaint)
+                }
+
+                Spacer(minLength: 8)
+
+                Button {
+                    revoking = profile.linkBetween(trainer: trainer.id, client: account.id)
+                } label: {
+                    Image(systemName: "person.badge.minus")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Theme.textFaint)
+                        .frame(width: 40, height: 40)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Togli l'accesso a \(trainer.displayName)")
+            }
+        }
+    }
+}
+
 /// I clienti seguiti, con l'aggiunta tramite codice.
 struct ClientsSection: View {
     let trainer: UserAccount

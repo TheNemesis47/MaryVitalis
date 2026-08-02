@@ -5,6 +5,7 @@ struct RoutineDetailView: View {
 
     @EnvironmentObject private var library: ExerciseLibrary
     @EnvironmentObject private var store: WorkoutStore
+    @EnvironmentObject private var profile: ProfileStore
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var session = SessionController()
 
@@ -55,7 +56,7 @@ struct RoutineDetailView: View {
         return MapHighlight.Item(
             title: exerciseName(at: index),
             detail: item.details,
-            machines: GymCatalog.machines(for: item.exerciseQuery)
+            machines: profile.machines(for: item.exerciseQuery)
         )
     }
 
@@ -121,7 +122,9 @@ struct RoutineDetailView: View {
             NavigationStack { RoutineEditorView(routine: routine) }
                 .presentationBackground(Theme.bg)
         }
-        .sheet(item: $detail) { ExerciseDetailView(detail: $0) }
+        .sheet(item: $detail) {
+            ExerciseDetailView(detail: $0).environmentObject(profile)
+        }
         .sheet(isPresented: $askDate) {
             DateSheet(initial: DateKey.iso(Date()), marks: store.calendarMarks(), accent: accent) { date in
                 askDate = false
@@ -230,17 +233,25 @@ struct RoutineDetailView: View {
                 Spacer(minLength: 0)
             }
 
-            VStack(alignment: .leading, spacing: 7) {
-                HStack {
-                    Text("**\(stats.exercisesDone)/\(stats.exercises)** esercizi · **\(stats.setsDone)/\(stats.sets)** serie")
-                        .font(.system(size: 12.5))
-                        .foregroundStyle(Theme.textDim)
-                    Spacer()
-                    Text("\(stats.percent)%")
-                        .font(.system(size: 12.5, weight: .bold))
-                        .foregroundStyle(accent)
+            // I contatori valgono per l'allenamento in corso, non per il giorno:
+            // fuori dalla sessione il posto di quei numeri è il recap.
+            if session.isRunning {
+                VStack(alignment: .leading, spacing: 7) {
+                    HStack {
+                        Text("**\(stats.exercisesDone)/\(stats.exercises)** esercizi · **\(stats.setsDone)/\(stats.sets)** serie")
+                            .font(.system(size: 12.5))
+                            .foregroundStyle(Theme.textDim)
+                        Spacer()
+                        Text("\(stats.percent)%")
+                            .font(.system(size: 12.5, weight: .bold))
+                            .foregroundStyle(accent)
+                    }
+                    ProgressTrack(percent: stats.percent, accent: accent)
                 }
-                ProgressTrack(percent: stats.percent, accent: accent)
+            } else {
+                Text("\(stats.exercises) esercizi · \(stats.sets) serie in programma")
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(Theme.textFaint)
             }
 
             if !session.isRunning {
@@ -281,7 +292,7 @@ struct RoutineDetailView: View {
                                 }
                             },
                             onOpenMap: {
-                                mapFocus = GymCatalog.machines(for: item.exerciseQuery).first
+                                mapFocus = profile.machines(for: item.exerciseQuery).first
                                 showMap = true
                             }
                         )
@@ -304,18 +315,21 @@ struct RoutineDetailView: View {
     private var idleActions: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                Button(started && !stats.isComplete ? "▶ Riprendi la scheda" : "▶ Inizia la scheda") {
+                // "Riprendi" solo per un allenamento lasciato a metà: chiuderne
+                // uno azzera il giorno da sé, quindi non serve nessun tasto per
+                // farlo a mano.
+                Button(started ? "▶ Riprendi la scheda" : "▶ Inizia la scheda") {
                     askDate = true
                 }
                 .buttonStyle(PrimaryButtonStyle(accent: accent))
-
-                if started {
-                    Button("↺ Azzera") {
-                        if let day { store.resetDay(routineID: routine.id, dayID: day.id) }
-                    }
-                    .buttonStyle(GhostButtonStyle())
-                }
                 Spacer(minLength: 0)
+            }
+
+            if started {
+                Text("Hai lasciato \(stats.setsDone) serie a metà: riprendendo riparti da lì.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.textFaint)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             HStack(spacing: 6) {
@@ -433,6 +447,10 @@ struct RoutineDetailView: View {
                 sips: session.sips,
                 effort: effort
             )
+            // Le serie appartengono all'allenamento appena finito, non al
+            // giorno della scheda: quello che resta è lo storico, e la
+            // prossima volta si riparte puliti.
+            store.resetDay(routineID: routine.id, dayID: day.id)
         }
         Feedback.success()
         askEffort = false

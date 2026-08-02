@@ -24,6 +24,13 @@ struct MaryVitalisApp: App {
         let workoutStore = WorkoutStore(context: context)
         profileStore.cloud = cloudSync
         workoutStore.cloud = cloudSync
+        // Quello che arriva dal cloud finisce in SwiftData, ma le viste
+        // guardano gli store: senza questo rimbalzo, un cliente che accetta
+        // resta invisibile al trainer fino al riavvio.
+        cloudSync.onRemoteChange = { [weak profileStore, weak workoutStore] in
+            profileStore?.objectWillChange.send()
+            workoutStore?.refresh()
+        }
 
         _store = StateObject(wrappedValue: workoutStore)
         _profile = StateObject(wrappedValue: profileStore)

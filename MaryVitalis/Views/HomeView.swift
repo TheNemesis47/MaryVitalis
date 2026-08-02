@@ -80,16 +80,22 @@ struct HomeView: View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 10)], spacing: 10) {
             StatTile(value: "\(library.all.count)", label: "Esercizi")
             StatTile(value: "\(library.targets.count)", label: "Gruppi muscolari")
-            StatTile(value: "\(GymCatalog.defaultLocation.machines.count)", label: "Attrezzi mappati")
+            StatTile(value: "\(mappedEquipmentCount)", label: "Attrezzi mappati")
             StatTile(value: "\(profile.visibleRoutines.count)", label: "Schede accessibili")
         }
+    }
+
+    /// Gli attrezzi delle sue sale, non quelli di una palestra d'esempio.
+    private var mappedEquipmentCount: Int {
+        (profile.viewedAccount?.gyms ?? []).reduce(0) { $0 + ($1.equipment?.count ?? 0) }
     }
 
     private var routines: some View {
         VStack(alignment: .leading, spacing: 12) {
             SectionHeader(title: "Le schede di allenamento", trailing: "Vedi tutte →") { goToTab(.schede) }
             ForEach(profile.visibleRoutines, id: \.id) { routine in
-                RoutineCard(routine: routine, daysDone: store.completedDays(routine: routine)) {
+                RoutineCard(routine: routine,
+                            workoutsDone: store.completedWorkouts(routine: routine)) {
                     openRoutine(routine.id)
                 }
             }
@@ -119,7 +125,9 @@ struct HomeView: View {
 /// il che spegneva anche il tocco del link e il menu contestuale.
 struct RoutineCard: View {
     let routine: Routine
-    let daysDone: Int
+    /// Gli allenamenti chiusi in questa scheda: il numero che conta è quanto la
+    /// si usa, non quante caselle sono rimaste segnate.
+    var workoutsDone: Int = 0
     var action: (() -> Void)?
 
     var body: some View {
@@ -148,7 +156,9 @@ struct RoutineCard: View {
                     .foregroundStyle(Theme.textDim)
                     .fixedSize(horizontal: false, vertical: true)
 
-                FlexibleTags(items: routine.meta + (daysDone > 0 ? ["✓ \(daysDone)/\(routine.orderedDays.count) giorni"] : [])) { item in
+                FlexibleTags(items: routine.meta + (workoutsDone > 0
+                                                    ? ["✓ \(Fmt.plural(workoutsDone, "allenamento", "allenamenti"))"]
+                                                    : [])) { item in
                     MetaPill(text: item, color: item.hasPrefix("✓") ? routine.accent : Theme.textDim)
                 }
 

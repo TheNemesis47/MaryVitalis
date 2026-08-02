@@ -46,7 +46,7 @@ struct RoutinesView: View {
                     ZStack(alignment: .topTrailing) {
                         NavigationLink(value: routine.id) {
                             RoutineCard(routine: routine,
-                                        daysDone: store.completedDays(routine: routine))
+                                        workoutsDone: store.completedWorkouts(routine: routine))
                         }
                         .buttonStyle(.plain)
                         // Senza una forma esplicita il tocco prende solo dove
@@ -70,13 +70,36 @@ struct RoutinesView: View {
                     }
                 }
 
-                if let owner {
-                    Button("＋  Crea una scheda") {
-                        editing = profile.createRoutine(for: owner)
-                        Feedback.success()
+                // Un trainer si allena anche lui: prima di scrivere una scheda
+                // va detto per chi è, altrimenti finisce nel profilo che
+                // capita di stare guardando.
+                if candidates.count > 1 {
+                    Menu {
+                        ForEach(candidates, id: \.id) { person in
+                            Button {
+                                create(for: person)
+                            } label: {
+                                Label(person.id == profile.signedInAccountID
+                                      ? "Per me (\(person.displayName))"
+                                      : person.displayName,
+                                      systemImage: person.id == profile.signedInAccountID
+                                      ? "person.fill" : person.symbolName)
+                            }
+                        }
+                    } label: {
+                        Text("＋  Crea una scheda")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(Theme.text)
+                            .padding(.horizontal, 18)
+                            .padding(.vertical, 12)
+                            .frame(maxWidth: .infinity)
+                            .background(Theme.surface, in: Capsule())
+                            .overlay(Capsule().stroke(Theme.border, lineWidth: 1))
                     }
-                    .buttonStyle(GhostButtonStyle())
-                    .frame(maxWidth: .infinity)
+                } else if let owner {
+                    Button("＋  Crea una scheda") { create(for: owner) }
+                        .buttonStyle(GhostButtonStyle())
+                        .frame(maxWidth: .infinity)
                 }
             }
             .padding(.horizontal, 18)
@@ -104,6 +127,23 @@ struct RoutinesView: View {
         } message: {
             Text("La scheda sparisce anche dagli altri dispositivi. Gli allenamenti già registrati restano nello storico.")
         }
+    }
+
+    /// Se stesso più i clienti che segue: le persone per cui può scrivere.
+    private var candidates: [UserAccount] {
+        guard let account = profile.account else { return [] }
+        return [account] + profile.clients(of: account).filter { $0.id != account.id }
+    }
+
+    private func create(for person: UserAccount) {
+        // La scheda nasce nel profilo di chi la userà, quindi ci si sposta:
+        // scriverla "da fuori" vorrebbe dire non vederla dov'è finita.
+        if profile.viewedAccountID != person.id {
+            profile.viewAccount(person.id)
+            store.activate(accountID: person.id)
+        }
+        editing = profile.createRoutine(for: person)
+        Feedback.success()
     }
 
     @ViewBuilder

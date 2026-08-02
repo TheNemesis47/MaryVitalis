@@ -34,8 +34,13 @@ struct SettingsView: View {
 
                     if let account = profile.account {
                         PendingRequestsSection(account: account)
+                        TrainersSection(account: account)
                         InviteCodeCard(account: account, accent: accent)
-                        if account.userRole == .trainer || account.userRole == .admin {
+                        // Anche a chi non è registrato come trainer: se ha
+                        // clienti collegati deve vederli, altrimenti il legame
+                        // esiste e nell'app non c'è.
+                        if account.userRole == .trainer || account.userRole == .admin
+                            || !profile.clients(of: account).isEmpty {
                             ClientsSection(trainer: account)
                         }
                     }

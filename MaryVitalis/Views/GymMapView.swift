@@ -34,7 +34,7 @@ struct GymMapView: View {
     var focus: GymMachine? = nil
     var showsDismissButton = false
 
-    @AppStorage("mv:selected-gym") private var selectedGymID = GymCatalog.defaultLocation.id
+    @AppStorage("mv:selected-gym") private var selectedGymID = ""
     @EnvironmentObject private var profile: ProfileStore
     @State private var showGyms = false
     @Environment(\.dismiss) private var dismiss
@@ -43,19 +43,20 @@ struct GymMapView: View {
     @State private var selected: GymMachine?
     @State private var searchText = ""
 
-    /// Le sedi del profilo consultato. Finché non ne ha create, resta il
-    /// rilievo di FitActive come esempio: una mappa vuota non aiuterebbe.
+    /// Le sedi del profilo consultato, e nient'altro: la palestra di qualcun
+    /// altro non è un buon segnaposto per chi non ne ha ancora mappata una.
     private var availableLocations: [GymLocation] {
-        let mine = (profile.viewedAccount?.gyms ?? [])
+        (profile.viewedAccount?.gyms ?? [])
             .sorted { $0.sortIndex < $1.sortIndex }
             .map(\.asLocation)
-        return mine.isEmpty ? GymCatalog.all : mine
     }
+
+    private var hasGyms: Bool { !availableLocations.isEmpty }
 
     private var gym: GymLocation {
         availableLocations.first { $0.id == selectedGymID }
             ?? availableLocations.first
-            ?? GymCatalog.defaultLocation
+            ?? .none
     }
 
     private var accent: Color { highlight?.accent ?? Theme.defaultAccent }
@@ -66,18 +67,22 @@ struct GymMapView: View {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: true) {
                 LazyVStack(alignment: .leading, spacing: 18) {
-                    locationHeader
-
-                    if let highlight, highlight.current != nil || highlight.next != nil {
-                        highlightBanner(highlight)
-                    }
-
-                    gridHeader
-
-                    if filteredMachines.isEmpty {
-                        emptySearchState
+                    if !hasGyms {
+                        noGymState
                     } else {
-                        floorPlan
+                        locationHeader
+
+                        if let highlight, highlight.current != nil || highlight.next != nil {
+                            highlightBanner(highlight)
+                        }
+
+                        gridHeader
+
+                        if filteredMachines.isEmpty {
+                            emptySearchState
+                        } else {
+                            floorPlan
+                        }
                     }
                 }
                 .padding(.horizontal, 16)
@@ -127,6 +132,18 @@ struct GymMapView: View {
     }
 
     // MARK: - Sede
+
+    /// Cosa vede chi non ha ancora mappato niente. Non una palestra finta:
+    /// l'invito a costruire la propria, che è l'unica che gli serve.
+    private var noGymState: some View {
+        VStack(spacing: 14) {
+            EmptyStateView(icon: "🗺️", title: "Nessuna sede",
+                           message: "Disegna la tua palestra: scegli quante righe e colonne ha la sala e riempi le celle con gli attrezzi che ci trovi.")
+            Button("＋  Crea la tua sede") { showGyms = true }
+                .buttonStyle(PrimaryButtonStyle())
+        }
+        .frame(maxWidth: .infinity)
+    }
 
     private var locationHeader: some View {
         Menu {
@@ -426,23 +443,24 @@ struct GymMapView: View {
         }?.id
     }
 
-    /// Converte il rilievo continuo in una pianta sparsa di quattro corsie.
-    /// La griglia viene sempre costruita sull'intero catalogo: anche durante
-    /// una ricerca gli elementi visibili non cambiano colonna.
-    /// Converte il rilievo in una pianta sparsa di quattro corsie.
-    /// La griglia si costruisce sempre sull'intero catalogo: anche durante una
+    /// La pianta, riga per riga, così com'è stata disegnata nell'editor.
+    ///
+    /// Prima la griglia veniva ricalcolata da coordinate continue e schiacciata
+    /// su quattro corsie fisse: una sala larga sei attrezzi ci perdeva dentro
+    /// quello che non ci stava. Ora riga e colonna sono un dato, non una stima.
+    /// La griglia si costruisce sempre sull'intera sala: anche durante una
     /// ricerca gli attrezzi visibili non cambiano colonna.
     private var spatialFloorRows: [EquipmentFloorRow] {
         let visibleIDs = Set(filteredMachines.map(\.id))
-        let layout = SpatialGrid.layout(machines: gym.machines, zones: gym.zones)
         let byID = Dictionary(gym.machines.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let rowCount = max(gym.rows, (gym.placements.values.map(\.row).max() ?? -1) + 1)
 
         var floorRows: [EquipmentFloorRow] = []
-        for rowIndex in 0..<layout.rowCount {
-            let inRow = layout.placements.filter { $0.value.row == rowIndex }
+        for rowIndex in 0..<rowCount {
+            let inRow = gym.placements.filter { $0.value.row == rowIndex }
             guard inRow.contains(where: { visibleIDs.contains($0.key) }) else { continue }
 
-            let machines = (0..<SpatialGrid.columns).map { column -> GymMachine? in
+            let machines = (0..<gym.columns).map { column -> GymMachine? in
                 guard let id = inRow.first(where: { $0.value.column == column })?.key,
                       visibleIDs.contains(id) else { return nil }
                 return byID[id]
@@ -450,7 +468,7 @@ struct GymMapView: View {
             floorRows.append(EquipmentFloorRow(
                 id: "\(gym.id)-r\(rowIndex)",
                 machines: machines,
-                height: layout.rowHeights[rowIndex]
+                height: 112
             ))
         }
         return floorRows

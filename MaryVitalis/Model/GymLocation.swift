@@ -2,6 +2,12 @@ import SwiftUI
 
 /// Una palestra installata nell'app. Ogni sede possiede aree e attrezzi:
 /// aggiungere una nuova sede non richiede modifiche alle viste.
+/// Dove sta un attrezzo nella griglia della sala.
+struct GymPlacement: Hashable {
+    let row: Int
+    let column: Int
+}
+
 struct GymLocation: Identifiable, Hashable {
     let id: String
     let brand: String
@@ -10,6 +16,13 @@ struct GymLocation: Identifiable, Hashable {
     let address: String?
     let zones: [GymZoneFrame]
     let machines: [GymMachine]
+    /// Quanto è larga la sala. Non più quattro corsie fisse: una palestra con
+    /// sei attrezzi affiancati va disegnata con sei colonne.
+    var columns: Int = 4
+    var rows: Int = 0
+    /// [id attrezzo: posizione]. Arriva dall'editor, non più dedotta da un
+    /// rilievo continuo: la posizione la sceglie chi mappa la sala.
+    var placements: [String: GymPlacement] = [:]
 
     var displayName: String { "\(brand) \(name)" }
 
@@ -30,6 +43,11 @@ struct GymLocation: Identifiable, Hashable {
 
     static func == (lhs: GymLocation, rhs: GymLocation) -> Bool { lhs.id == rhs.id }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
+
+    /// Il posto di nessuno: quello che la mappa mostra a chi non ha ancora
+    /// mappato una sala. Prima al suo posto compariva la palestra di Napoli.
+    static let none = GymLocation(id: "", brand: "", name: "Nessuna sede",
+                                  city: "", address: nil, zones: [], machines: [])
 }
 
 struct GymZoneFrame: Identifiable, Hashable {
@@ -42,42 +60,35 @@ struct GymZoneFrame: Identifiable, Hashable {
     var color: Color { Color(hex: colorHex) }
 }
 
+/// Quello che l'app sa delle palestre senza che nessuno gliel'abbia detto.
+///
+/// Non contiene più nessuna **sede**: la sala di FitActive La Birreria era la
+/// palestra di una persona, e comparire come punto di partenza a un utente di
+/// Milano non aveva senso. Restano gli attrezzi, che sono conoscenza generale.
 enum GymCatalog {
-    static let fitActiveLaBirreria = GymLocation(
-        id: "fitactive-la-birreria",
-        brand: "FitActive",
-        name: "La Birreria",
-        city: "Napoli",
-        address: nil,
-        zones: [
-            GymZoneFrame(id: "strength-north", name: "Forza Nord", subtitle: "Gambe e spinte guidate",
-                    symbol: "figure.strengthtraining.functional", colorHex: "#38bdf8",
-                    frame: CGRect(x: 0, y: 0, width: 292, height: 238)),
-            GymZoneFrame(id: "functional", name: "Cavi & Functional", subtitle: "Colonne, corpo libero e mobilità",
-                    symbol: "figure.cooldown", colorHex: "#a78bfa",
-                    frame: CGRect(x: 292, y: 0, width: 199.7, height: 287)),
-            GymZoneFrame(id: "guided", name: "Isotonica", subtitle: "Macchine guidate full body",
-                    symbol: "figure.strengthtraining.traditional", colorHex: "#4ade80",
-                    frame: CGRect(x: 0, y: 238, width: 398, height: 314)),
-            GymZoneFrame(id: "cardio", name: "Cardio", subtitle: "Tapis roulant, bike e scale",
-                    symbol: "heart.fill", colorHex: "#fb7185",
-                    frame: CGRect(x: 398, y: 287, width: 93.7, height: 454)),
-            GymZoneFrame(id: "free-weights", name: "Pesi liberi", subtitle: "Manubri, panche e spazio a terra",
-                    symbol: "dumbbell.fill", colorHex: "#fbbf24",
-                    frame: CGRect(x: 0, y: 552, width: 398, height: 189))
-        ],
-        machines: GymMap.machines
-    )
+    /// Gli attrezzi che l'app conosce già: è quello che resta del rilievo,
+    /// ed è la libreria da cui si pesca costruendo la propria sala.
+    static var knownMachines: [GymMachine] { GymMap.machines }
 
-    static let all: [GymLocation] = [fitActiveLaBirreria]
-    static let defaultLocation = fitActiveLaBirreria
-
-    static func location(id: String) -> GymLocation? {
-        all.first { $0.id == id }
-    }
-
-    static func machines(for query: String, in location: GymLocation = defaultLocation) -> [GymMachine] {
+    static func machines(for query: String, in location: GymLocation) -> [GymMachine] {
         let available = Set(location.machines.map(\.id))
         return GymMap.machines(for: query).filter { available.contains($0.id) }
+    }
+
+    /// Gli attrezzi **della sede dell'utente** su cui si fa un esercizio.
+    ///
+    /// Il collegamento passa da `catalogItemID`: la posta in gioco è che
+    /// "Dove si fa" indichi una macchina che in quella sala esiste davvero,
+    /// invece di una di una palestra di Napoli che l'utente non ha mai visto.
+    static func machines(for query: String, in gym: Gym) -> [GymMachine] {
+        let wanted = Set(GymMap.machines(for: query).map(\.id))
+        guard !wanted.isEmpty else { return [] }
+
+        let matching = Set(gym.orderedEquipment
+            .filter { item in item.catalogItemID.map(wanted.contains) ?? false }
+            .map(\.id.uuidString))
+        guard !matching.isEmpty else { return [] }
+
+        return gym.asLocation.machines.filter { matching.contains($0.id) }
     }
 }

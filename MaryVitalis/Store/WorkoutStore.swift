@@ -48,6 +48,13 @@ final class WorkoutStore: ObservableObject {
         return try? context.fetch(descriptor).first
     }
 
+    /// Rilegge quello che è cambiato sotto, senza cambiare profilo: è quello
+    /// che serve quando la sincronizzazione porta storico o progressi nuovi.
+    func refresh() {
+        reloadHistory()
+        objectWillChange.send()
+    }
+
     /// Cambia il profilo di cui si leggono progressi, storico e recupero.
     func activate(accountID: UUID?) {
         ownerAccountID = accountID
@@ -141,8 +148,11 @@ final class WorkoutStore: ObservableObject {
         return DayStats(day: day, progress: dayProgress(routineID: routine.id, dayID: day.id))
     }
 
-    func completedDays(routine: Routine) -> Int {
-        routine.orderedDays.indices.filter { stats(routine: routine, dayIndex: $0).isComplete }.count
+    /// Quante volte questa scheda è stata portata a termine. Prima si contavano
+    /// i giorni con le caselle segnate, che ora si azzerano a fine allenamento:
+    /// il numero che resta vero è quello dello storico.
+    func completedWorkouts(routine: Routine) -> Int {
+        history.filter { $0.routineID == routine.id }.count
     }
 
     private func record(routineID: UUID, dayID: UUID, itemID: UUID) -> DayProgress? {

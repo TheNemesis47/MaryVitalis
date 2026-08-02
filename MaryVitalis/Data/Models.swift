@@ -355,6 +355,9 @@ final class Gym {
     var address: String?
     /// Larghezza della griglia della sala.
     var columns: Int = 4
+    /// Altezza della griglia. Una sala non è solo profonda: chi ha sei attrezzi
+    /// in fila deve poter allargare, non solo allungare.
+    var rows: Int = 4
     var sortIndex: Int = 0
     var createdAt: Date = Date.now
     var updatedAt: Date = Date.now
@@ -380,6 +383,7 @@ final class Gym {
          city: String = "",
          address: String? = nil,
          columns: Int = 4,
+         rows: Int = 4,
          sortIndex: Int = 0,
          createdAt: Date = .now,
          updatedAt: Date = .now,
@@ -392,6 +396,7 @@ final class Gym {
         self.city = city
         self.address = address
         self.columns = columns
+        self.rows = rows
         self.sortIndex = sortIndex
         self.createdAt = createdAt
         self.updatedAt = updatedAt
@@ -408,8 +413,19 @@ final class Gym {
         }
     }
 
+    /// Le righe davvero occupate da un attrezzo.
     var rowCount: Int {
         ((equipment ?? []).map(\.gridRow).max() ?? -1) + 1
+    }
+
+    /// Le righe da disegnare: quelle scelte dall'utente, mai meno di quelle
+    /// dove c'è già qualcosa — restringere la griglia non deve far sparire
+    /// attrezzi dalla mappa.
+    var gridRows: Int { max(1, max(rows, rowCount)) }
+
+    /// Come `gridRows` ma per le colonne.
+    var gridColumns: Int {
+        max(1, max(columns, ((equipment ?? []).map(\.gridColumn).max() ?? -1) + 1))
     }
 }
 

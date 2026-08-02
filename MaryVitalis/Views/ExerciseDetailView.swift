@@ -99,6 +99,7 @@ struct TinyTag: View {
 /// La scheda completa dell'esercizio: animazione, dati e passi.
 struct ExerciseDetailView: View {
     let detail: ExerciseDetail
+    @EnvironmentObject private var profile: ProfileStore
     @Environment(\.dismiss) private var dismiss
 
     private var exercise: Exercise { detail.exercise }
@@ -139,7 +140,7 @@ struct ExerciseDetailView: View {
                                 .foregroundStyle(Theme.text)
                             ForEach(machines) { machine in
                                 NavigationLink {
-                                    MachineDetailView(machine: machine, gym: GymCatalog.defaultLocation)
+                                    MachineDetailView(machine: machine, gym: location)
                                 } label: {
                                     HStack(spacing: 10) {
                                         Image(systemName: machine.category.symbol)
@@ -201,9 +202,15 @@ struct ExerciseDetailView: View {
         .presentationBackground(Theme.bg)
     }
 
-    /// Gli attrezzi della sala su cui si esegue questo esercizio.
+    /// Gli attrezzi **della propria sala** su cui si esegue questo esercizio.
+    /// Se non ne ha mappata nessuna la sezione sparisce: meglio niente che
+    /// indicare una macchina che in quella palestra non c'è.
     private var machines: [GymMachine] {
-        GymCatalog.machines(for: exercise.name)
+        profile.machines(for: exercise.name)
+    }
+
+    private var location: GymLocation {
+        profile.activeGym?.asLocation ?? .none
     }
 
     private func specTile(_ label: String, _ value: String?) -> some View {

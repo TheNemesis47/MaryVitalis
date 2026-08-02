@@ -22,6 +22,12 @@ struct RootView: View {
                 LoginView()
             }
         }
+        // Un avviso del genere stava solo dentro le impostazioni, dove non lo
+        // vede nessuno: se il database è finito in memoria, quello che l'utente
+        // scrive sparisce alla chiusura dell'app e deve saperlo subito.
+        .safeAreaInset(edge: .top) {
+            if AppDatabase.isEphemeral { ephemeralBanner }
+        }
         .onAppear { activateViewedAccount() }
         .onChange(of: profile.viewedAccountID) { _, _ in activateViewedAccount() }
         .onChange(of: profile.signedInAccountID) { _, _ in activateViewedAccount() }
@@ -80,6 +86,17 @@ struct RootView: View {
             .tag(Tab.recap)
         }
         .tint(Theme.defaultAccent)
+    }
+
+    private var ephemeralBanner: some View {
+        Label("Attenzione: i dati non si stanno salvando. Quello che scrivi sparisce chiudendo l'app.",
+              systemImage: "exclamationmark.triangle.fill")
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(Color(hex: "#0a0f1a"))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(Color(hex: "#fb7185"))
     }
 
     private func activateViewedAccount() {

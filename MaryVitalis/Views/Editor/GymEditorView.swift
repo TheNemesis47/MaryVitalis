@@ -38,19 +38,15 @@ struct GymListView: View {
                     }
 
                     if owner != nil {
+                        Button("＋  Crea una sede") { createEmpty() }
+                            .buttonStyle(PrimaryButtonStyle())
+                            .frame(maxWidth: .infinity)
+
                         Button("↓  Importa con un codice") { showImport = true }
                             .buttonStyle(GhostButtonStyle())
                             .frame(maxWidth: .infinity)
 
-                        Button("＋  Crea una sede vuota") { createEmpty() }
-                            .buttonStyle(GhostButtonStyle())
-                            .frame(maxWidth: .infinity)
-
-                        Button("Parti da FitActive La Birreria") { createFromCatalog() }
-                            .buttonStyle(GhostButtonStyle())
-                            .frame(maxWidth: .infinity)
-
-                        Text("La sede di esempio arriva con i \(GymFactory.catalog.count) attrezzi già rilevati, istruzioni comprese. Puoi spostarli, rinominarli o toglierli.")
+                        Text("La sede nasce vuota: scegli quante righe e colonne ha la sala, poi riempi le celle pescando dai \(GymFactory.catalog.count) attrezzi che l'app conosce già — muscoli e istruzioni inclusi — o creandone di tuoi.")
                             .font(.caption)
                             .foregroundStyle(Theme.textFaint)
                             .fixedSize(horizontal: false, vertical: true)
@@ -94,79 +90,94 @@ struct GymListView: View {
                                     set: { if !$0 { deleting = nil } })) {
             Button("Annulla", role: .cancel) { deleting = nil }
             Button("Elimina", role: .destructive) {
-                if let deleting {
-                    context.delete(deleting)
-                    try? context.save()
-                }
+                if let deleting { profile.delete(deleting) }
                 deleting = nil
+                Feedback.tap()
             }
+        } message: {
+            Text("Sparisce anche dagli altri tuoi dispositivi. Le copie che hai condiviso o assegnato restano a chi le ha.")
         }
     }
 
+    /// La riga della sede: scelta a sinistra, azioni a destra.
+    ///
+    /// Prima il tasto "modifica" era un bottone dentro il bottone della riga, e
+    /// in SwiftUI quello esterno si prende tutti i tocchi: sembrava che il
+    /// tasto non ci fosse. Eliminare stava solo nel menu contestuale, che nessuno
+    /// trova. Ora sono due aree separate e il menu è visibile.
     private func gymRow(_ gym: Gym) -> some View {
         let active = selectedGymID == gym.id.uuidString
-        return Button {
-            selectedGymID = gym.id.uuidString
-            Feedback.tap()
-        } label: {
-            Panel(padding: 15, radius: Theme.rLg) {
-                HStack(spacing: 13) {
-                    Image(systemName: active ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundStyle(active ? Theme.defaultAccent : Theme.textFaint)
+        return Panel(padding: 15, radius: Theme.rLg) {
+            HStack(spacing: 13) {
+                Button {
+                    selectedGymID = gym.id.uuidString
+                    Feedback.tap()
+                } label: {
+                    HStack(spacing: 13) {
+                        Image(systemName: active ? "checkmark.circle.fill" : "circle")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(active ? Theme.defaultAccent : Theme.textFaint)
 
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(gym.displayName.isEmpty ? "Sede senza nome" : gym.displayName)
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(Theme.text)
-                        HStack(spacing: 6) {
-                            Text("\(gym.city.isEmpty ? "" : gym.city + " · ")\(Fmt.plural(gym.orderedEquipment.count, "attrezzo", "attrezzi"))")
-                                .font(.caption)
-                                .foregroundStyle(Theme.textFaint)
-                            if gym.isShared {
-                                Label(InviteCode.formatted(gym.shareCode), systemImage: "square.and.arrow.up")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .foregroundStyle(Color(hex: "#4ade80"))
-                            }
-                            if gym.sourceGymID != nil {
-                                Label("importata", systemImage: "arrow.down.circle")
-                                    .font(.system(size: 10, weight: .semibold))
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(gym.displayName.isEmpty ? "Sede senza nome" : gym.displayName)
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(Theme.text)
+                                .multilineTextAlignment(.leading)
+                            HStack(spacing: 6) {
+                                Text("\(gym.city.isEmpty ? "" : gym.city + " · ")\(Fmt.plural(gym.orderedEquipment.count, "attrezzo", "attrezzi"))")
+                                    .font(.caption)
                                     .foregroundStyle(Theme.textFaint)
+                                if gym.isShared {
+                                    Label(InviteCode.formatted(gym.shareCode), systemImage: "square.and.arrow.up")
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundStyle(Color(hex: "#4ade80"))
+                                }
+                                if gym.sourceGymID != nil {
+                                    Label("importata", systemImage: "arrow.down.circle")
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundStyle(Theme.textFaint)
+                                }
                             }
                         }
+                        Spacer(minLength: 0)
                     }
-                    Spacer(minLength: 8)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
 
-                    Button { editing = gym } label: {
-                        Image(systemName: "slider.horizontal.3")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(Theme.textDim)
-                            .frame(width: 40, height: 40)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Modifica \(gym.displayName)")
+                Menu {
+                    gymMenu(gym)
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Theme.textDim)
+                        .frame(width: 40, height: 40)
+                        .background(Theme.surfaceHi, in: Circle())
+                }
+                .accessibilityLabel("Azioni su \(gym.displayName)")
+            }
+        }
+        .contextMenu { gymMenu(gym) }
+    }
+
+    @ViewBuilder
+    private func gymMenu(_ gym: Gym) -> some View {
+        Button { editing = gym } label: {
+            Label("Modifica e rinomina", systemImage: "slider.horizontal.3")
+        }
+        if gym.owner?.id == profile.signedInAccountID {
+            Button { sharing = gym } label: {
+                Label(gym.isShared ? "Codice di condivisione" : "Condividi",
+                      systemImage: "square.and.arrow.up")
+            }
+            if profile.account.map({ !profile.clients(of: $0).isEmpty }) == true {
+                Button { assigning = gym } label: {
+                    Label("Assegna a un cliente", systemImage: "person.2.fill")
                 }
             }
         }
-        .buttonStyle(.plain)
-        .contextMenu {
-            Button { editing = gym } label: {
-                Label("Modifica", systemImage: "slider.horizontal.3")
-            }
-            if gym.owner?.id == profile.signedInAccountID {
-                Button { sharing = gym } label: {
-                    Label(gym.isShared ? "Codice di condivisione" : "Condividi",
-                          systemImage: "square.and.arrow.up")
-                }
-                if profile.account.map({ !profile.clients(of: $0).isEmpty }) == true {
-                    Button { assigning = gym } label: {
-                        Label("Assegna a un cliente", systemImage: "person.2.fill")
-                    }
-                }
-            }
-            Button(role: .destructive) { deleting = gym } label: {
-                Label("Elimina", systemImage: "trash")
-            }
+        Button(role: .destructive) { deleting = gym } label: {
+            Label("Elimina", systemImage: "trash")
         }
     }
 
@@ -176,14 +187,6 @@ struct GymListView: View {
         try? context.save()
         selectedGymID = gym.id.uuidString
         editing = gym
-        Feedback.success()
-    }
-
-    private func createFromCatalog() {
-        guard let owner else { return }
-        let gym = GymFactory.insertFromCatalog(owner: owner, into: context)
-        try? context.save()
-        selectedGymID = gym.id.uuidString
         Feedback.success()
     }
 }
@@ -198,7 +201,10 @@ struct GymEditorView: View {
     @State private var targetCell: (row: Int, column: Int)?
     @State private var editingEquipment: GymEquipment?
 
-    private var rows: Int { max(gym.rowCount + 1, 4) }
+    /// Una riga in più in fondo: c'è sempre dove appoggiare il prossimo attrezzo
+    /// senza dover prima allargare la griglia.
+    private var rows: Int { gym.gridRows }
+    private var columns: Int { gym.gridColumns }
 
     var body: some View {
         ScrollView {
@@ -229,6 +235,7 @@ struct GymEditorView: View {
                     .foregroundStyle(Theme.textFaint)
                     .fixedSize(horizontal: false, vertical: true)
 
+                sizeControls
                 grid
             }
             .padding(18)
@@ -252,11 +259,82 @@ struct GymEditorView: View {
         }
     }
 
+    /// Quanto è grande la sala. Una palestra lunga e stretta e una larga e corta
+    /// non si mappano con la stessa griglia, quindi si dimensiona a mano.
+    private var sizeControls: some View {
+        Panel(padding: 14, radius: Theme.rLg) {
+            VStack(spacing: 12) {
+                sizeStepper(title: "Colonne", value: columns,
+                            canRemove: columns > 1 && gym.gridColumns > lastUsedColumn + 1,
+                            onAdd: { gym.columns = columns + 1; save() },
+                            onRemove: { gym.columns = max(1, columns - 1); save() })
+
+                Rectangle().fill(Theme.border).frame(height: 1)
+
+                sizeStepper(title: "Righe", value: rows,
+                            canRemove: rows > 1 && gym.gridRows > lastUsedRow + 1,
+                            onAdd: { gym.rows = rows + 1; save() },
+                            onRemove: { gym.rows = max(1, rows - 1); save() })
+
+                Text(lastUsedRow + 1 >= rows || lastUsedColumn + 1 >= columns
+                     ? "Per restringere, togli prima gli attrezzi dall'ultima riga o colonna."
+                     : "Aggiungi righe se la sala è profonda, colonne se è larga.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.textFaint)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var lastUsedRow: Int { gym.rowCount - 1 }
+    private var lastUsedColumn: Int { (gym.orderedEquipment.map(\.gridColumn).max() ?? -1) }
+
+    private func sizeStepper(title: String, value: Int, canRemove: Bool,
+                             onAdd: @escaping () -> Void,
+                             onRemove: @escaping () -> Void) -> some View {
+        HStack {
+            Text(title)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Theme.text)
+            Spacer()
+            HStack(spacing: 14) {
+                stepButton("minus", enabled: canRemove) { onRemove(); Feedback.tap() }
+                Text("\(value)")
+                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.text)
+                    .frame(minWidth: 28)
+                stepButton("plus", enabled: value < 12) { onAdd(); Feedback.tap() }
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title): \(value)")
+    }
+
+    private func stepButton(_ symbol: String, enabled: Bool,
+                            action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(enabled ? Theme.text : Theme.textFaint.opacity(0.4))
+                .frame(width: 38, height: 38)
+                .background(Theme.surfaceHi, in: Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+    }
+
+    private func save() {
+        gym.updatedAt = .now
+        try? context.save()
+    }
+
     private var grid: some View {
         VStack(spacing: 8) {
             ForEach(0..<rows, id: \.self) { row in
                 HStack(spacing: 8) {
-                    ForEach(0..<gym.columns, id: \.self) { column in
+                    ForEach(0..<columns, id: \.self) { column in
                         cell(row: row, column: column)
                     }
                 }
@@ -444,9 +522,10 @@ struct EquipmentEditorSheet: View {
                 }
 
                 Section {
-                    Stepper("Riga \(equipment.gridRow + 1)", value: $equipment.gridRow, in: 0...40)
+                    Stepper("Riga \(equipment.gridRow + 1)",
+                            value: $equipment.gridRow, in: 0...max(0, gym.gridRows - 1))
                     Stepper("Colonna \(equipment.gridColumn + 1)",
-                            value: $equipment.gridColumn, in: 0...(gym.columns - 1))
+                            value: $equipment.gridColumn, in: 0...max(0, gym.gridColumns - 1))
                 } header: {
                     Text("Posizione in sala")
                 } footer: {

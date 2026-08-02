@@ -51,10 +51,30 @@ enum AuthService {
     static func revokeAppleAccess() async {}
 }
 
+/// Il payload delle sedi vive in `CloudSync.swift`, che qui non si compila
+/// (Firestore). Serve solo perché `importGym` esista: le prove riguardano la
+/// parte locale — creazione, copia, cancellazione.
+struct GymPayload {
+    var dictionary: [String: Any] = [:]
+
+    @MainActor
+    @discardableResult
+    func insert(owner: UserAccount, into context: ModelContext, preservingID: Bool = false) -> Gym {
+        let gym = Gym(name: "Importata", sortIndex: owner.gyms?.count ?? 0)
+        gym.owner = owner
+        context.insert(gym)
+        return gym
+    }
+}
+
 @MainActor
 final class CloudSync {
     func start(for account: UserAccount) async {}
     func pushProfile(_ account: UserAccount) async {}
+    func pushGym(_ gym: Gym, ownerUID: String) async {}
+    func deleteGym(id: UUID) async {}
+    func releaseGymCode(_ code: String) async {}
+    func fetchSharedGym(code: String) async throws -> GymPayload? { nil }
     func releaseInviteCode(_ code: String) async {}
     func findUser(byInviteCode code: String) async throws -> String? { nil }
     func pushLink(_ link: TrainerLink, trainerUID: String, clientUID: String) async {}
@@ -319,36 +339,62 @@ func run() async throws {
     profile.delete(nuova)
     profile.signIn(account: anna)
 
-    print("\n[griglia della palestra]")
-    let machines = GymCatalog.defaultLocation.machines
-    let zones = GymCatalog.defaultLocation.zones
-    let layout = SpatialGrid.layout(machines: machines, zones: zones)
-    check("tutti gli attrezzi posizionati", layout.placements.count == machines.count)
-    check("nessuna colonna fuori dalle quattro corsie",
-          layout.placements.values.allSatisfy { $0.column >= 0 && $0.column < SpatialGrid.columns })
-    check("righe contigue da zero",
-          Set(layout.placements.values.map(\.row)) == Set(0..<layout.rowCount))
-    check("un'altezza per riga", layout.rowHeights.count == layout.rowCount)
-    let occupied = layout.placements.values.map { "\($0.row)-\($0.column)" }
-    check("nessuna cella occupata due volte", Set(occupied).count == occupied.count)
-    check("stabile fra due chiamate",
-          SpatialGrid.layout(machines: machines, zones: zones).placements.count == layout.placements.count)
-
     print("\n[palestre]")
-    let sede = GymFactory.insertFromCatalog(owner: anna, into: context)
+    // Nessuna sede precompilata: la palestra di una persona non è il punto di
+    // partenza di tutti. Si parte vuoti e si dimensiona la griglia.
+    let sede = GymFactory.insertEmpty(named: "La mia palestra", owner: anna, into: context)
     try context.save()
-    check("sede creata dal catalogo",
-          sede.orderedEquipment.count == GymFactory.catalog.count)
+    check("la sede nasce vuota", sede.orderedEquipment.isEmpty)
+    check("griglia iniziale quadrata",
+          sede.columns == GymFactory.defaultColumns && sede.rows == GymFactory.defaultRows)
+    check("il catalogo degli attrezzi resta", !GymFactory.catalog.isEmpty)
+
+    for (index, machine) in GymFactory.catalog.prefix(6).enumerated() {
+        let item = GymEquipment(catalogItemID: machine.id, name: machine.name,
+                                category: machine.category,
+                                gridRow: index / 3, gridColumn: index % 3)
+        item.gym = sede
+        context.insert(item)
+    }
+    try context.save()
+
     check("nessuna cella occupata due volte",
           Set(sede.orderedEquipment.map { "\($0.gridRow)-\($0.gridColumn)" }).count
             == sede.orderedEquipment.count)
-    check("zone convertite in fasce di righe",
-          (sede.zones ?? []).allSatisfy { $0.startRow <= $0.endRow })
     let cella = sede.firstFreeCell
     check("cella libera dentro la griglia",
-          cella.column >= 0 && cella.column < sede.columns)
+          cella.column >= 0 && cella.column < sede.gridColumns)
     check("la cella libera è davvero libera",
           sede.equipment(atRow: cella.row, column: cella.column) == nil)
+
+    print("\n[griglia dimensionabile]")
+    sede.columns = 6
+    sede.rows = 2
+    try context.save()
+    check("la sala si allarga in orizzontale", sede.gridColumns == 6)
+    // Restringere non deve far sparire attrezzi: chi è fuori dalla griglia
+    // scelta la tiene aperta lui.
+    let lontano = GymEquipment(name: "In fondo", category: .altro, gridRow: 7, gridColumn: 0)
+    lontano.gym = sede
+    context.insert(lontano)
+    try context.save()
+    check("la griglia non taglia via chi sta più in basso", sede.gridRows == 8)
+    sede.rows = 1
+    try context.save()
+    check("restringere non nasconde attrezzi", sede.gridRows == 8)
+    context.delete(lontano)
+    try context.save()
+
+    print("\n[cancellazione della sede]")
+    let daButtare = GymFactory.insertEmpty(named: "Sede di passaggio", owner: anna, into: context)
+    try context.save()
+    let idSede = daButtare.id
+    UserDefaults.standard.set(idSede.uuidString, forKey: ProfileStore.selectedGymKey)
+    profile.delete(daButtare)
+    check("la sede sparisce davvero",
+          !(anna.gyms ?? []).contains { $0.id == idSede })
+    check("la scelta della sede attiva non resta appesa",
+          UserDefaults.standard.string(forKey: ProfileStore.selectedGymKey) != idSede.uuidString)
 
     print("\n[condivisione della sede]")
     let sedeCopia = GymFactory.copy(sede, to: bea, into: context)

@@ -11,6 +11,56 @@ import SwiftData
 /// l'originale, e chi l'ha mappata non si ritrova la propria sala cambiata da
 /// altri. Se l'originale migliora, si ricondivide.
 extension ProfileStore {
+    /// La sede scelta nella mappa. È una preferenza di dispositivo, non un dato
+    /// del profilo: la stessa persona in trasferta usa un'altra sala.
+    static let selectedGymKey = "mv:selected-gym"
+
+    var gyms: [Gym] {
+        (viewedAccount?.gyms ?? []).sorted { $0.sortIndex < $1.sortIndex }
+    }
+
+    /// La sede attiva del profilo consultato, o la prima che ha.
+    var activeGym: Gym? {
+        let selected = UserDefaults.standard.string(forKey: Self.selectedGymKey)
+            .flatMap(UUID.init(uuidString:))
+        return gyms.first { $0.id == selected } ?? gyms.first
+    }
+
+    /// Gli attrezzi della **sua** sala su cui si fa questo esercizio.
+    /// Senza sede mappata non si inventa niente: la lista resta vuota e la UI
+    /// lo dice, invece di indicare la macchina di una palestra di qualcun altro.
+    func machines(for query: String) -> [GymMachine] {
+        guard let activeGym else { return [] }
+        return GymCatalog.machines(for: query, in: activeGym)
+    }
+
+    /// Cancella la sede, dal telefono e dal cloud.
+    ///
+    /// Senza la seconda metà tornava indietro da sola: la copia su Firestore
+    /// restava, e la sincronizzazione successiva la reimportava come se fosse
+    /// nuova. È il motivo per cui "Elimina" sembrava non funzionare.
+    func delete(_ gym: Gym) {
+        let id = gym.id
+        let code = gym.shareCode
+        let wasShared = gym.isShared
+        let wasSelected = UserDefaults.standard.string(forKey: Self.selectedGymKey) == id.uuidString
+
+        context.delete(gym)
+        try? context.save()
+        objectWillChange.send()
+
+        if wasSelected {
+            UserDefaults.standard.removeObject(forKey: Self.selectedGymKey)
+        }
+
+        if let cloud {
+            Task {
+                await cloud.deleteGym(id: id)
+                if wasShared, !code.isEmpty { await cloud.releaseGymCode(code) }
+            }
+        }
+    }
+
     enum GymError: LocalizedError {
         case invalidCode
         case unknownCode

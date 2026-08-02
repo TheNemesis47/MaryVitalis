@@ -22,6 +22,13 @@ final class CloudSync: ObservableObject {
     private let context: ModelContext
     private var listeners: [ListenerRegistration] = []
 
+    /// Avvisa chi mostra i dati che dal cloud è arrivato qualcosa.
+    ///
+    /// `CloudSync` scrive dentro SwiftData, ma le viste osservano `ProfileStore`:
+    /// senza questo, l'accettazione di un cliente arrivava sul telefono del
+    /// trainer e restava invisibile fino al riavvio dell'app.
+    var onRemoteChange: (() -> Void)?
+
     init(context: ModelContext) {
         self.context = context
     }
@@ -200,8 +207,10 @@ final class CloudSync: ObservableObject {
             guard let id = (document.data()["id"] as? String).flatMap(UUID.init(uuidString:)),
                   !known.contains(id) else { continue }
             // Una sede è di chi ce l'ha: arrivata una volta, le modifiche
-            // successive sono sue. Si importa, non si sovrascrive.
-            payload.insert(owner: account, into: context)
+            // successive sono sue. Si importa, non si sovrascrive — ma tenendo
+            // l'identificativo, altrimenti al giro dopo non la si riconosce e
+            // se ne crea un'altra copia, all'infinito.
+            payload.insert(owner: account, into: context, preservingID: true)
         }
         try? context.save()
     }
@@ -355,6 +364,8 @@ final class CloudSync: ObservableObject {
                 await pullSessions(ownerUID: clientUID, account: client)
             }
         }
+
+        onRemoteChange?()
     }
 
     private func pullLinks(uid: String) async {
@@ -400,6 +411,7 @@ final class CloudSync: ObservableObject {
                         await self.applyLink(document.data())
                     }
                     try? self.context.save()
+                    self.onRemoteChange?()
                 }
             }
 
@@ -425,6 +437,7 @@ final class CloudSync: ObservableObject {
                     }
                     try? self.context.save()
                     self.lastSync = Date()
+                    self.onRemoteChange?()
                 }
             }
 
@@ -439,6 +452,7 @@ final class CloudSync: ObservableObject {
                     }
                     try? self.context.save()
                     self.lastSync = Date()
+                    self.onRemoteChange?()
                 }
             }
 
@@ -700,8 +714,10 @@ struct GymPayload {
             "city": gym.city,
             "address": gym.address as Any,
             "columns": gym.columns,
+            "rows": gym.rows,
             "isShared": gym.isShared,
             "shareCode": gym.shareCode,
+            "sourceGymID": gym.sourceGymID?.uuidString as Any,
             "updatedAt": Timestamp(date: gym.updatedAt),
             "equipment": gym.orderedEquipment.map { item in
                 [
@@ -736,19 +752,31 @@ struct GymPayload {
 
     var sourceID: UUID? { (dictionary["id"] as? String).flatMap(UUID.init(uuidString:)) }
 
-    /// Crea la copia locale. Non riusa gli identificativi dell'originale: due
-    /// persone che importano la stessa sede devono averne due proprie.
+    /// Crea la copia locale.
+    ///
+    /// `preservingID` distingue due casi che sembrano uguali e non lo sono:
+    /// una sede **propria** che ritorna dal cloud deve tenersi il suo
+    /// identificativo — altrimenti a ogni sincronizzazione se ne aggiunge un
+    /// doppione — mentre una sede **importata con il codice** ne vuole uno
+    /// nuovo, perché due persone che importano la stessa sala devono averne
+    /// due proprie.
     @MainActor
     @discardableResult
-    func insert(owner: UserAccount, into context: ModelContext) -> Gym {
+    func insert(owner: UserAccount, into context: ModelContext, preservingID: Bool = false) -> Gym {
         let gym = Gym(
+            id: (preservingID ? sourceID : nil) ?? UUID(),
             brand: dictionary["brand"] as? String ?? "",
             name: dictionary["name"] as? String ?? "Palestra",
             city: dictionary["city"] as? String ?? "",
             address: dictionary["address"] as? String,
-            columns: dictionary["columns"] as? Int ?? SpatialGrid.columns,
+            columns: dictionary["columns"] as? Int ?? GymFactory.defaultColumns,
+            rows: dictionary["rows"] as? Int ?? GymFactory.defaultRows,
             sortIndex: owner.gyms?.count ?? 0,
-            sourceGymID: sourceID
+            // Tornando dal cloud la sede *è* quella di prima, non una copia:
+            // la provenienza resta quella che aveva.
+            sourceGymID: preservingID
+                ? (dictionary["sourceGymID"] as? String).flatMap(UUID.init(uuidString:))
+                : sourceID
         )
         gym.owner = owner
         context.insert(gym)
@@ -805,6 +833,14 @@ extension CloudSync {
         } catch {
             lastError = error.localizedDescription
         }
+    }
+
+    /// Cancella la sede dal cloud. Va fatto insieme alla cancellazione locale,
+    /// altrimenti la sincronizzazione successiva la rimette dov'era.
+    func deleteGym(id: UUID) async {
+        guard FirebaseService.isConfigured else { return }
+        try? await FirebaseService.db.collection(FirestorePath.gyms)
+            .document(id.uuidString).delete()
     }
 
     func releaseGymCode(_ code: String) async {

@@ -4,66 +4,18 @@ import SwiftUI
 
 /// Crea e traduce le palestre.
 ///
-/// Il rilievo originale di FitActive vive ancora come costanti in
-/// `GymMapData.swift`: da lì nasce il **catalogo** da cui chiunque pesca per
-/// costruire la propria sala. Nel modello nuovo riga e colonna sono dati
-/// primi, non più dedotti dalle coordinate.
+/// Il rilievo di FitActive non è più una **sede** di partenza: era la palestra
+/// di una persona sola, e a chiunque altro non diceva niente. Di quel lavoro
+/// resta il **catalogo** degli attrezzi — nomi, muscoli, istruzioni — da cui si
+/// pesca per costruire la propria sala, cella per cella.
 enum GymFactory {
     /// Gli attrezzi che l'app conosce già, con testi e istruzioni scritti.
     static var catalog: [GymMachine] { GymMap.machines }
 
-    /// Costruisce una palestra dal rilievo esistente, calcolando riga e colonna
-    /// una volta sola con la stessa logica che disegna la mappa.
-    @discardableResult
-    static func insertFromCatalog(named name: String = "La Birreria",
-                                  brand: String = "FitActive",
-                                  city: String = "Napoli",
-                                  owner: UserAccount,
-                                  into context: ModelContext) -> Gym {
-        let source = GymCatalog.defaultLocation
-        let layout = SpatialGrid.layout(machines: source.machines, zones: source.zones)
-
-        let gym = Gym(brand: brand, name: name, city: city,
-                      columns: SpatialGrid.columns,
-                      sortIndex: owner.gyms?.count ?? 0)
-        gym.owner = owner
-        context.insert(gym)
-
-        for machine in source.machines {
-            guard let place = layout.placements[machine.id] else { continue }
-            let equipment = GymEquipment(
-                catalogItemID: machine.id,
-                name: machine.name,
-                subtitle: machine.subtitle,
-                category: machine.category,
-                gridRow: place.row,
-                gridColumn: place.column,
-                muscles: machine.muscles,
-                howTo: machine.howTo,
-                tips: machine.tips,
-                uncertain: machine.uncertain
-            )
-            equipment.gym = gym
-            context.insert(equipment)
-        }
-
-        // Le zone diventano fasce di righe: quello che serve davvero è sapere
-        // "da che riga a che riga", non un rettangolo del rilievo.
-        for zone in source.zones {
-            let rows = source.machines
-                .filter { zone.frame.contains($0.center) }
-                .compactMap { layout.placements[$0.id]?.row }
-            guard let first = rows.min(), let last = rows.max() else { continue }
-
-            let stored = GymZone(name: zone.name, subtitle: zone.subtitle,
-                                 symbol: zone.symbol, colorHex: zone.colorHex,
-                                 startRow: first, endRow: last)
-            stored.gym = gym
-            context.insert(stored)
-        }
-
-        return gym
-    }
+    /// La griglia iniziale di una sede nuova: piccola, perché la si allarga
+    /// con i pulsanti man mano che si mappa la sala.
+    static let defaultColumns = 4
+    static let defaultRows = 4
 
     @discardableResult
     static func insertEmpty(named name: String,
@@ -71,7 +23,8 @@ enum GymFactory {
                             owner: UserAccount,
                             into context: ModelContext) -> Gym {
         let gym = Gym(brand: "", name: name, city: city,
-                      columns: SpatialGrid.columns,
+                      columns: defaultColumns,
+                      rows: defaultRows,
                       sortIndex: owner.gyms?.count ?? 0)
         gym.owner = owner
         context.insert(gym)
@@ -120,9 +73,16 @@ extension Gym {
             )
         }
 
+        let placements = Dictionary(
+            orderedEquipment.map { ($0.id.uuidString, GymPlacement(row: $0.gridRow, column: $0.gridColumn)) },
+            uniquingKeysWith: { current, _ in current }
+        )
+
         return GymLocation(id: id.uuidString, brand: brand, name: name,
                            city: city, address: address,
-                           zones: frames, machines: machines)
+                           zones: frames, machines: machines,
+                           columns: gridColumns, rows: gridRows,
+                           placements: placements)
     }
 
     /// La cella libera più in alto a sinistra, dove finisce il prossimo attrezzo.
@@ -130,7 +90,7 @@ extension Gym {
         let taken = Set(orderedEquipment.map { "\($0.gridRow)-\($0.gridColumn)" })
         var row = 0
         while true {
-            for column in 0..<columns where !taken.contains("\(row)-\(column)") {
+            for column in 0..<gridColumns where !taken.contains("\(row)-\(column)") {
                 return (row, column)
             }
             row += 1
@@ -159,6 +119,7 @@ extension GymFactory {
             city: source.city,
             address: source.address,
             columns: source.columns,
+            rows: source.rows,
             sortIndex: owner.gyms?.count ?? 0,
             sourceGymID: source.id
         )
