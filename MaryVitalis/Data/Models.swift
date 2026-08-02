@@ -357,6 +357,14 @@ final class Gym {
     var columns: Int = 4
     var sortIndex: Int = 0
     var createdAt: Date = Date.now
+    var updatedAt: Date = Date.now
+    /// Il codice con cui altri possono importare questa sede. Vuoto finché non
+    /// viene condivisa: mappare una palestra è lavoro, e chi lo fa decide se
+    /// regalarlo.
+    var shareCode: String = ""
+    var isShared: Bool = false
+    /// Da dove arriva, quando è la copia della sede di qualcun altro.
+    var sourceGymID: UUID?
 
     var owner: UserAccount?
 
@@ -373,7 +381,11 @@ final class Gym {
          address: String? = nil,
          columns: Int = 4,
          sortIndex: Int = 0,
-         createdAt: Date = .now) {
+         createdAt: Date = .now,
+         updatedAt: Date = .now,
+         shareCode: String = "",
+         isShared: Bool = false,
+         sourceGymID: UUID? = nil) {
         self.id = id
         self.brand = brand
         self.name = name
@@ -382,6 +394,10 @@ final class Gym {
         self.columns = columns
         self.sortIndex = sortIndex
         self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.shareCode = shareCode
+        self.isShared = isShared
+        self.sourceGymID = sourceGymID
     }
 
     var displayName: String { "\(brand) \(name)".trimmingCharacters(in: .whitespaces) }

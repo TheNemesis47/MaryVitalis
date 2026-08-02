@@ -223,6 +223,70 @@ try:
     st, _ = fs("DELETE", f"routines/{routine}", trainer_tok)
     check("il trainer NON può cancellare la scheda del cliente", st == 403)
 
+    print("\n[palestre condivise]")
+    gym_private = "aaaa1111-0000-0000-0000-000000000001"
+    gym_shared  = "bbbb2222-0000-0000-0000-000000000002"
+    gym_code = "".join(random.choice(ALPHABET) for _ in range(6))
+
+    equip = {"mapValue": {"fields": {
+        "name": s("Leg press"), "category": s("Macchine isotoniche"),
+        "gridRow": {"integerValue": "0"}, "gridColumn": {"integerValue": "1"},
+        "uncertain": {"booleanValue": False}}}}
+
+    def gym_payload(owner, shared, code, name):
+        return {"fields": {
+            "id": s(gym_shared if shared else gym_private),
+            "ownerId": s(owner), "brand": s("FitActive"), "name": s(name),
+            "city": s("Napoli"), "columns": {"integerValue": "4"},
+            "isShared": {"booleanValue": shared}, "shareCode": s(code),
+            "updatedAt": {"timestampValue": "2026-08-02T14:00:00Z"},
+            "equipment": {"arrayValue": {"values": [equip]}}}}
+
+    st, _ = fs("PATCH", f"gyms/{gym_private}", client_tok,
+               gym_payload(client_id, False, "", "Sala privata"))
+    check("il cliente crea una sede privata", st == 200)
+
+    st, _ = fs("GET", f"gyms/{gym_private}", other_tok)
+    check("un estraneo NON legge una sede privata", st == 403)
+
+    st, _ = fs("PATCH", f"gyms/{gym_shared}", trainer_tok,
+               gym_payload(trainer_id, True, gym_code, "Sala condivisa"))
+    check("il trainer pubblica la propria sede", st == 200)
+
+    st, _ = fs("PATCH", f"gymCodes/{gym_code}", trainer_tok,
+               {"fields": {"gymId": s(gym_shared), "ownerId": s(trainer_id)}})
+    check("il codice della sede viene registrato", st == 200)
+
+    st, body = fs("GET", f"gymCodes/{gym_code}", other_tok)
+    check("chiunque risolve il codice", st == 200
+          and body.get("fields", {}).get("gymId", {}).get("stringValue") == gym_shared)
+
+    st, body = fs("GET", f"gyms/{gym_shared}", other_tok)
+    count = len(body.get("fields", {}).get("equipment", {}).get("arrayValue", {}).get("values", []))
+    check("una sede pubblicata la legge chiunque", st == 200 and count == 1)
+
+    st, _ = fs("PATCH", f"gyms/{gym_shared}", other_tok,
+               gym_payload(trainer_id, True, gym_code, "Manomessa"))
+    check("chi la importa NON puo modificare l'originale", st == 403)
+
+    st, _ = fs("PATCH", f"gymCodes/{gym_code}", other_tok,
+               {"fields": {"gymId": s(gym_private), "ownerId": s(other_id)}})
+    check("un estraneo NON dirotta il codice della sede", st == 403)
+
+    # Il trainer assegna una sede al cliente: la scrive nel profilo di lui.
+    gym_assigned = "cccc3333-0000-0000-0000-000000000003"
+    payload = gym_payload(client_id, False, "", "Assegnata dal trainer")
+    payload["fields"]["id"] = s(gym_assigned)
+    st, _ = fs("PATCH", f"gyms/{gym_assigned}", trainer_tok, payload)
+    check("il trainer assegna una sede al cliente", st == 200)
+
+    st, body = fs("GET", f"gyms/{gym_assigned}", client_tok)
+    got = body.get("fields", {}).get("name", {}).get("stringValue")
+    check("il cliente la ritrova", st == 200 and got == "Assegnata dal trainer")
+
+    st, _ = fs("DELETE", f"gyms/{gym_assigned}", trainer_tok)
+    check("il trainer NON puo cancellare la sede del cliente", st == 403)
+
     print("\n[storico]")
     session = "99999999-0000-0000-0000-000000000001"
     st, _ = fs("PATCH", f"sessions/{session}", client_tok,
@@ -247,6 +311,10 @@ try:
     check("dopo la revoca il trainer NON legge più la scheda", st == 403)
 
     print("\n[pulizia]")
+    for gid, tok in ((gym_private, client_tok), (gym_shared, trainer_tok),
+                     (gym_assigned, client_tok)):
+        fs("DELETE", f"gyms/{gid}", tok)
+    fs("DELETE", f"gymCodes/{gym_code}", trainer_tok)
     fs("DELETE", f"routines/{routine}", client_tok)
     fs("DELETE", f"sessions/{session}", client_tok)
     fs("DELETE", f"trainerLinks/{link}", client_tok)

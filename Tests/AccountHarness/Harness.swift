@@ -308,6 +308,40 @@ func run() async throws {
     check("stabile fra due chiamate",
           SpatialGrid.layout(machines: machines, zones: zones).placements.count == layout.placements.count)
 
+    print("\n[palestre]")
+    let sede = GymFactory.insertFromCatalog(owner: anna, into: context)
+    try context.save()
+    check("sede creata dal catalogo",
+          sede.orderedEquipment.count == GymFactory.catalog.count)
+    check("nessuna cella occupata due volte",
+          Set(sede.orderedEquipment.map { "\($0.gridRow)-\($0.gridColumn)" }).count
+            == sede.orderedEquipment.count)
+    check("zone convertite in fasce di righe",
+          (sede.zones ?? []).allSatisfy { $0.startRow <= $0.endRow })
+    let cella = sede.firstFreeCell
+    check("cella libera dentro la griglia",
+          cella.column >= 0 && cella.column < sede.columns)
+    check("la cella libera è davvero libera",
+          sede.equipment(atRow: cella.row, column: cella.column) == nil)
+
+    print("\n[condivisione della sede]")
+    let sedeCopia = GymFactory.copy(sede, to: bea, into: context)
+    try context.save()
+    check("copia con gli stessi attrezzi",
+          sedeCopia.orderedEquipment.count == sede.orderedEquipment.count)
+    check("la copia è di chi la riceve", sedeCopia.owner?.id == bea.id)
+    check("traccia della provenienza", sedeCopia.sourceGymID == sede.id)
+    let idOriginali = Set(sede.orderedEquipment.map { $0.id })
+    let idCopia = Set(sedeCopia.orderedEquipment.map { $0.id })
+    check("attrezzi con identità propria", idCopia.isDisjoint(with: idOriginali))
+
+    sedeCopia.orderedEquipment.first?.name = "Rinominato nella copia"
+    sedeCopia.orderedEquipment.first?.gridRow = 99
+    try context.save()
+    check("modificare la copia non tocca l'originale",
+          sede.orderedEquipment.first?.name != "Rinominato nella copia"
+            && sede.orderedEquipment.first?.gridRow != 99)
+
     print("\n[cancellazione account]")
     let routineID = anna.orderedRoutines.first!.id
     let dayID = anna.orderedRoutines.first!.orderedDays.first!.id

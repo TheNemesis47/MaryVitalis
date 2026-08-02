@@ -165,10 +165,35 @@ service cloud.firestore {
 
     // ---------- Palestre ----------
 
+    // Mappare una palestra è lavoro: cinquanta attrezzi con muscoli e
+    // istruzioni. Ha senso che si faccia una volta e poi giri, fra un trainer e
+    // i suoi clienti o fra chi frequenta la stessa sala.
     match /gyms/{gymId} {
-      allow read: if isSelfOrAcceptedTrainer(resource.data.ownerId);
-      allow create: if isSelf(request.resource.data.ownerId);
-      allow update, delete: if isSelf(resource.data.ownerId);
+      // Una sede **pubblicata** la legge chiunque sia registrato: è il senso
+      // della condivisione. Chi non l'ha pubblicata resta privato.
+      allow read: if isSelfOrAcceptedTrainer(resource.data.ownerId)
+        || resource.data.isShared == true;
+
+      // Un trainer può crearne una nel profilo di un cliente che lo segue,
+      // come fa con le schede. Il proprietario non si può cambiare a posteriori.
+      allow create: if isSelfOrAcceptedTrainer(request.resource.data.ownerId);
+      allow update: if isSelfOrAcceptedTrainer(resource.data.ownerId)
+        && request.resource.data.ownerId == resource.data.ownerId;
+
+      // Cancellare la sede di qualcun altro no.
+      allow delete: if isSelf(resource.data.ownerId);
+    }
+
+    // Il codice di una sede condivisa, separato dalla sede come per gli inviti:
+    // si cerca per codice senza rendere elencabili tutte le palestre.
+    match /gymCodes/{code} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.ownerId == request.auth.uid;
+      allow update: if signedIn()
+        && resource.data.ownerId == request.auth.uid
+        && request.resource.data.ownerId == request.auth.uid;
+      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
     }
 
     // Tutto il resto è chiuso. Le regole non hanno un "default consentito":

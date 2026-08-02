@@ -188,6 +188,24 @@ final class CloudSync: ObservableObject {
         }
     }
 
+    /// Le sedi che appartengono al profilo, comprese quelle che un trainer gli
+    /// ha assegnato: senza questo, la mappa mandata dal trainer non arriverebbe.
+    private func pullGyms(ownerUID: String, account: UserAccount) async {
+        guard let documents = try? await FirebaseService.db.collection(FirestorePath.gyms)
+            .whereField("ownerId", isEqualTo: ownerUID).getDocuments() else { return }
+
+        let known = Set((account.gyms ?? []).map(\.id))
+        for document in documents.documents {
+            let payload = GymPayload(dictionary: document.data())
+            guard let id = (document.data()["id"] as? String).flatMap(UUID.init(uuidString:)),
+                  !known.contains(id) else { continue }
+            // Una sede è di chi ce l'ha: arrivata una volta, le modifiche
+            // successive sono sue. Si importa, non si sovrascrive.
+            payload.insert(owner: account, into: context)
+        }
+        try? context.save()
+    }
+
     private func pullSessions(ownerUID: String, account: UserAccount) async {
         guard let documents = try? await FirebaseService.db.collection(FirestorePath.sessions)
             .whereField("ownerId", isEqualTo: ownerUID).getDocuments() else { return }
@@ -326,6 +344,7 @@ final class CloudSync: ObservableObject {
         if let account = account(firebaseUID: uid) {
             await pullSessions(ownerUID: uid, account: account)
             await pullProgress(ownerUID: uid, account: account)
+            await pullGyms(ownerUID: uid, account: account)
         }
 
         // Schede e storico dei clienti seguiti: è il motivo per cui esiste
@@ -662,5 +681,148 @@ struct RoutinePayload {
                 context.insert(item)
             }
         }
+    }
+}
+
+// MARK: - Palestre
+
+/// Una sede intera nel formato di Firestore, giusto per poterla ricreare
+/// altrove. Come per le schede: un documento solo, attrezzi annidati.
+struct GymPayload {
+    let dictionary: [String: Any]
+
+    init(gym: Gym, ownerUID: String) {
+        dictionary = [
+            "id": gym.id.uuidString,
+            "ownerId": ownerUID,
+            "brand": gym.brand,
+            "name": gym.name,
+            "city": gym.city,
+            "address": gym.address as Any,
+            "columns": gym.columns,
+            "isShared": gym.isShared,
+            "shareCode": gym.shareCode,
+            "updatedAt": Timestamp(date: gym.updatedAt),
+            "equipment": gym.orderedEquipment.map { item in
+                [
+                    "catalogItemID": item.catalogItemID as Any,
+                    "name": item.name,
+                    "subtitle": item.subtitle as Any,
+                    "category": item.category,
+                    "gridRow": item.gridRow,
+                    "gridColumn": item.gridColumn,
+                    "muscles": item.muscles,
+                    "howTo": item.howTo,
+                    "tips": item.tips,
+                    "uncertain": item.uncertain
+                ] as [String: Any]
+            },
+            "zones": (gym.zones ?? []).map { zone in
+                [
+                    "name": zone.name,
+                    "subtitle": zone.subtitle,
+                    "symbol": zone.symbol,
+                    "colorHex": zone.colorHex,
+                    "startRow": zone.startRow,
+                    "endRow": zone.endRow
+                ] as [String: Any]
+            }
+        ]
+    }
+
+    init(dictionary: [String: Any]) {
+        self.dictionary = dictionary
+    }
+
+    var sourceID: UUID? { (dictionary["id"] as? String).flatMap(UUID.init(uuidString:)) }
+
+    /// Crea la copia locale. Non riusa gli identificativi dell'originale: due
+    /// persone che importano la stessa sede devono averne due proprie.
+    @MainActor
+    @discardableResult
+    func insert(owner: UserAccount, into context: ModelContext) -> Gym {
+        let gym = Gym(
+            brand: dictionary["brand"] as? String ?? "",
+            name: dictionary["name"] as? String ?? "Palestra",
+            city: dictionary["city"] as? String ?? "",
+            address: dictionary["address"] as? String,
+            columns: dictionary["columns"] as? Int ?? SpatialGrid.columns,
+            sortIndex: owner.gyms?.count ?? 0,
+            sourceGymID: sourceID
+        )
+        gym.owner = owner
+        context.insert(gym)
+
+        for raw in dictionary["equipment"] as? [[String: Any]] ?? [] {
+            let equipment = GymEquipment(
+                catalogItemID: raw["catalogItemID"] as? String,
+                name: raw["name"] as? String ?? "",
+                subtitle: raw["subtitle"] as? String,
+                category: GymMachine.Category(rawValue: raw["category"] as? String ?? "") ?? .altro,
+                gridRow: raw["gridRow"] as? Int ?? 0,
+                gridColumn: raw["gridColumn"] as? Int ?? 0,
+                muscles: raw["muscles"] as? [String] ?? [],
+                howTo: raw["howTo"] as? [String] ?? [],
+                tips: raw["tips"] as? [String] ?? [],
+                uncertain: raw["uncertain"] as? Bool ?? false
+            )
+            equipment.gym = gym
+            context.insert(equipment)
+        }
+
+        for raw in dictionary["zones"] as? [[String: Any]] ?? [] {
+            let zone = GymZone(
+                name: raw["name"] as? String ?? "",
+                subtitle: raw["subtitle"] as? String ?? "",
+                symbol: raw["symbol"] as? String ?? "square.grid.2x2",
+                colorHex: raw["colorHex"] as? String ?? "#38bdf8",
+                startRow: raw["startRow"] as? Int ?? 0,
+                endRow: raw["endRow"] as? Int ?? 0
+            )
+            zone.gym = gym
+            context.insert(zone)
+        }
+
+        return gym
+    }
+}
+
+extension CloudSync {
+    func pushGym(_ gym: Gym, ownerUID: String) async {
+        guard FirebaseService.isConfigured else { return }
+        do {
+            try await FirebaseService.db.collection(FirestorePath.gyms)
+                .document(gym.id.uuidString)
+                .setData(GymPayload(gym: gym, ownerUID: ownerUID).dictionary, merge: false)
+
+            // Il codice vive fuori dalla sede, come per gli inviti: si cerca
+            // per codice senza rendere elencabili tutte le palestre.
+            if gym.isShared, !gym.shareCode.isEmpty {
+                try await FirebaseService.db.collection(FirestorePath.gymCodes)
+                    .document(gym.shareCode)
+                    .setData(["gymId": gym.id.uuidString, "ownerId": ownerUID])
+            }
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    func releaseGymCode(_ code: String) async {
+        guard FirebaseService.isConfigured, !code.isEmpty else { return }
+        try? await FirebaseService.db.collection(FirestorePath.gymCodes)
+            .document(code).delete()
+    }
+
+    /// Risolve il codice e restituisce la sede pronta da copiare.
+    func fetchSharedGym(code: String) async throws -> GymPayload? {
+        guard FirebaseService.isConfigured else { return nil }
+        let pointer = try await FirebaseService.db.collection(FirestorePath.gymCodes)
+            .document(code).getDocument()
+        guard let gymID = pointer.data()?["gymId"] as? String else { return nil }
+
+        let document = try await FirebaseService.db.collection(FirestorePath.gyms)
+            .document(gymID).getDocument()
+        guard let data = document.data(), data["isShared"] as? Bool == true else { return nil }
+        return GymPayload(dictionary: data)
     }
 }

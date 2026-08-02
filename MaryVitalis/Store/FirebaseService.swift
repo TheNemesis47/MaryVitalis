@@ -48,6 +48,7 @@ enum FirestorePath {
     static let sessions = "sessions"
     static let progress = "progress"
     static let gyms = "gyms"
+    static let gymCodes = "gymCodes"
 
     /// Identificativo deterministico del legame, così le regole possono
     /// verificarne l'esistenza senza doverlo cercare.

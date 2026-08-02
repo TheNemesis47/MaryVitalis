@@ -11,6 +11,10 @@ struct GymListView: View {
 
     @State private var editing: Gym?
     @State private var deleting: Gym?
+    @State private var sharing: Gym?
+    @State private var assigning: Gym?
+    @State private var showImport = false
+    @State private var busy = false
 
     private var owner: UserAccount? { profile.viewedAccount }
     private var gyms: [Gym] {
@@ -34,6 +38,10 @@ struct GymListView: View {
                     }
 
                     if owner != nil {
+                        Button("↓  Importa con un codice") { showImport = true }
+                            .buttonStyle(GhostButtonStyle())
+                            .frame(maxWidth: .infinity)
+
                         Button("＋  Crea una sede vuota") { createEmpty() }
                             .buttonStyle(GhostButtonStyle())
                             .frame(maxWidth: .infinity)
@@ -62,6 +70,23 @@ struct GymListView: View {
             if let editing {
                 NavigationStack { GymEditorView(gym: editing) }
                     .presentationBackground(Theme.bg)
+            }
+        }
+        .sheet(isPresented: Binding(get: { sharing != nil },
+                                    set: { if !$0 { sharing = nil } })) {
+            if let sharing {
+                ShareGymSheet(gym: sharing).environmentObject(profile)
+            }
+        }
+        .sheet(isPresented: Binding(get: { assigning != nil },
+                                    set: { if !$0 { assigning = nil } })) {
+            if let assigning {
+                AssignGymSheet(gym: assigning).environmentObject(profile)
+            }
+        }
+        .sheet(isPresented: $showImport) {
+            if let owner {
+                ImportGymSheet(owner: owner).environmentObject(profile)
             }
         }
         .alert("Eliminare \(deleting?.displayName ?? "")?",
@@ -94,9 +119,21 @@ struct GymListView: View {
                         Text(gym.displayName.isEmpty ? "Sede senza nome" : gym.displayName)
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(Theme.text)
-                        Text("\(gym.city.isEmpty ? "" : gym.city + " · ")\(Fmt.plural(gym.orderedEquipment.count, "attrezzo", "attrezzi"))")
-                            .font(.caption)
-                            .foregroundStyle(Theme.textFaint)
+                        HStack(spacing: 6) {
+                            Text("\(gym.city.isEmpty ? "" : gym.city + " · ")\(Fmt.plural(gym.orderedEquipment.count, "attrezzo", "attrezzi"))")
+                                .font(.caption)
+                                .foregroundStyle(Theme.textFaint)
+                            if gym.isShared {
+                                Label(InviteCode.formatted(gym.shareCode), systemImage: "square.and.arrow.up")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundStyle(Color(hex: "#4ade80"))
+                            }
+                            if gym.sourceGymID != nil {
+                                Label("importata", systemImage: "arrow.down.circle")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(Theme.textFaint)
+                            }
+                        }
                     }
                     Spacer(minLength: 8)
 
@@ -113,6 +150,20 @@ struct GymListView: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
+            Button { editing = gym } label: {
+                Label("Modifica", systemImage: "slider.horizontal.3")
+            }
+            if gym.owner?.id == profile.signedInAccountID {
+                Button { sharing = gym } label: {
+                    Label(gym.isShared ? "Codice di condivisione" : "Condividi",
+                          systemImage: "square.and.arrow.up")
+                }
+                if profile.account.map({ !profile.clients(of: $0).isEmpty }) == true {
+                    Button { assigning = gym } label: {
+                        Label("Assegna a un cliente", systemImage: "person.2.fill")
+                    }
+                }
+            }
             Button(role: .destructive) { deleting = gym } label: {
                 Label("Elimina", systemImage: "trash")
             }
@@ -482,5 +533,286 @@ struct ListEditor: View {
             Label("Aggiungi", systemImage: "plus.circle.fill")
                 .font(.subheadline)
         }
+    }
+}
+
+/// Il codice con cui altri importano questa sede.
+struct ShareGymSheet: View {
+    let gym: Gym
+
+    @EnvironmentObject private var profile: ProfileStore
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var code = ""
+    @State private var busy = false
+    @State private var copied = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    PageHeader(eyebrow: "CONDIVIDI", title: gym.displayName,
+                               subtitle: "Chi ha questo codice può importare la tua sede con tutti gli attrezzi che hai mappato.")
+
+                    if code.isEmpty {
+                        Button {
+                            Task { await share() }
+                        } label: {
+                            if busy {
+                                ProgressView().frame(maxWidth: .infinity, minHeight: 22)
+                            } else {
+                                Text("Genera il codice").frame(maxWidth: .infinity)
+                            }
+                        }
+                        .buttonStyle(PrimaryButtonStyle())
+                        .disabled(busy)
+                    } else {
+                        Panel(padding: 18, radius: Theme.rLg) {
+                            HStack {
+                                Text(InviteCode.formatted(code))
+                                    .font(.system(size: 32, weight: .bold, design: .monospaced))
+                                    .tracking(2)
+                                    .foregroundStyle(Theme.defaultAccent)
+                                    .textSelection(.enabled)
+                                Spacer(minLength: 8)
+                                Button {
+                                    UIPasteboard.general.string = code
+                                    copied = true
+                                    Feedback.tap()
+                                } label: {
+                                    Image(systemName: copied ? "checkmark.circle.fill" : "doc.on.doc.fill")
+                                        .font(.title3)
+                                        .foregroundStyle(copied ? Color(hex: "#4ade80") : Theme.textDim)
+                                        .frame(width: 44, height: 44)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+
+                        Text("Chi lo usa riceve una **copia**: la adatta come vuole e la tua sede resta com'è. Se in futuro la migliori, ricondividi il codice.")
+                            .font(.footnote)
+                            .foregroundStyle(Theme.textFaint)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Button("Smetti di condividere") {
+                            Task { await stop() }
+                        }
+                        .buttonStyle(GhostButtonStyle())
+                        .frame(maxWidth: .infinity)
+
+                        Text("Il codice smette di funzionare. Le copie già fatte restano a chi le ha: sono sue, non un prestito.")
+                            .font(.caption)
+                            .foregroundStyle(Theme.textFaint)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    if let errorMessage {
+                        Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                            .font(.footnote)
+                            .foregroundStyle(Color(hex: "#fb7185"))
+                    }
+                }
+                .padding(18)
+            }
+            .pageBackground()
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Fine") { dismiss() } }
+            }
+        }
+        .presentationBackground(Theme.bg)
+        .onAppear { code = gym.isShared ? gym.shareCode : "" }
+    }
+
+    private func share() async {
+        busy = true
+        errorMessage = nil
+        do { code = try await profile.shareGym(gym); Feedback.success() }
+        catch { errorMessage = error.localizedDescription }
+        busy = false
+    }
+
+    private func stop() async {
+        do { try await profile.stopSharing(gym); code = ""; Feedback.tap() }
+        catch { errorMessage = error.localizedDescription }
+    }
+}
+
+/// Importazione della sede di qualcun altro tramite codice.
+struct ImportGymSheet: View {
+    let owner: UserAccount
+
+    @EnvironmentObject private var profile: ProfileStore
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var code = ""
+    @State private var busy = false
+    @State private var errorMessage: String?
+    @FocusState private var focused: Bool
+
+    private var normalized: String { InviteCode.normalize(code) }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    PageHeader(eyebrow: "IMPORTA", title: "Codice della sede",
+                               subtitle: "Fattelo dare da chi ha già mappato la palestra: te la ritrovi pronta, con attrezzi e istruzioni.")
+
+                    TextField("K7M-2QX", text: $code)
+                        .font(.system(size: 26, weight: .bold, design: .monospaced))
+                        .tracking(3)
+                        .multilineTextAlignment(.center)
+                        .textInputAutocapitalization(.characters)
+                        .autocorrectionDisabled()
+                        .focused($focused)
+                        .submitLabel(.go)
+                        .onSubmit { Task { await importGym() } }
+                        .padding(.vertical, 16)
+                        .background(Theme.surface,
+                                    in: RoundedRectangle(cornerRadius: Theme.rMd, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: Theme.rMd, style: .continuous)
+                            .stroke(errorMessage == nil ? Theme.border : Color(hex: "#fb7185"), lineWidth: 1))
+
+                    if let errorMessage {
+                        Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                            .font(.footnote)
+                            .foregroundStyle(Color(hex: "#fb7185"))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Button {
+                        Task { await importGym() }
+                    } label: {
+                        if busy {
+                            ProgressView().frame(maxWidth: .infinity, minHeight: 22)
+                        } else {
+                            Text("Importa").frame(maxWidth: .infinity)
+                        }
+                    }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .disabled(busy || !InviteCode.isValid(normalized))
+                    .opacity(InviteCode.isValid(normalized) && !busy ? 1 : 0.5)
+
+                    Text("Ne ricevi una copia tua: puoi spostare, togliere o aggiungere attrezzi senza toccare la sede di chi te l'ha data.")
+                        .font(.caption)
+                        .foregroundStyle(Theme.textFaint)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(18)
+            }
+            .pageBackground()
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Annulla") { dismiss() } }
+            }
+        }
+        .presentationBackground(Theme.bg)
+        .onAppear { focused = true }
+    }
+
+    private func importGym() async {
+        busy = true
+        errorMessage = nil
+        do {
+            try await profile.importGym(code: normalized, for: owner)
+            Feedback.success()
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+            Feedback.tap()
+        }
+        busy = false
+    }
+}
+
+/// Assegnazione di una sede a un cliente seguito.
+struct AssignGymSheet: View {
+    let gym: Gym
+
+    @EnvironmentObject private var profile: ProfileStore
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var assigned: Set<UUID> = []
+    @State private var busy = false
+    @State private var errorMessage: String?
+
+    private var clients: [UserAccount] {
+        profile.account.map { profile.clients(of: $0) } ?? []
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    PageHeader(eyebrow: "ASSEGNA", title: gym.displayName,
+                               subtitle: "Ne mandi una copia al cliente: la troverà fra le sue sedi, e potrà adattarla.")
+
+                    ForEach(clients, id: \.id) { client in
+                        clientRow(client)
+                    }
+
+                    if clients.isEmpty {
+                        EmptyStateView(icon: "👥", title: "Nessun cliente",
+                                       message: "Collega prima qualcuno con il codice, dalle impostazioni.")
+                    }
+
+                    if let errorMessage {
+                        Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                            .font(.footnote)
+                            .foregroundStyle(Color(hex: "#fb7185"))
+                    }
+                }
+                .padding(18)
+            }
+            .pageBackground()
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Fine") { dismiss() } }
+            }
+        }
+        .presentationBackground(Theme.bg)
+    }
+
+    private func clientRow(_ client: UserAccount) -> some View {
+        let done = assigned.contains(client.id)
+        return Button {
+            Task { await assign(to: client) }
+        } label: {
+            Panel(padding: 14, radius: Theme.rLg) {
+                HStack(spacing: 12) {
+                    Image(systemName: done ? "checkmark.circle.fill" : client.symbolName)
+                        .font(.system(size: 19, weight: .semibold))
+                        .foregroundStyle(done ? Color(hex: "#4ade80") : Color(hex: client.accentHex))
+                        .frame(width: 38, height: 38)
+                        .background(Color(hex: client.accentHex).opacity(0.12), in: Circle())
+                    Text(client.displayName)
+                        .font(.system(size: 15.5, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                    Spacer(minLength: 8)
+                    if done {
+                        Text("assegnata")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Color(hex: "#4ade80"))
+                    }
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(busy || done)
+    }
+
+    private func assign(to client: UserAccount) async {
+        busy = true
+        errorMessage = nil
+        do {
+            try await profile.assignGym(gym, to: client)
+            assigned.insert(client.id)
+            Feedback.success()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        busy = false
     }
 }

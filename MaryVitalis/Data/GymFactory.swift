@@ -141,3 +141,55 @@ extension Gym {
         orderedEquipment.first { $0.gridRow == row && $0.gridColumn == column }
     }
 }
+
+extension GymFactory {
+    /// Copia una sede nel profilo di qualcun altro.
+    ///
+    /// È una copia **per valore**: chi la riceve poi la adatta — non tutti in
+    /// palestra usano gli stessi attrezzi — e chi l'ha mappata non si ritrova
+    /// la propria sala modificata da altri. Se l'originale cambia, si ricondivide.
+    @discardableResult
+    static func copy(_ source: Gym,
+                     to owner: UserAccount,
+                     named name: String? = nil,
+                     into context: ModelContext) -> Gym {
+        let copy = Gym(
+            brand: source.brand,
+            name: name ?? source.name,
+            city: source.city,
+            address: source.address,
+            columns: source.columns,
+            sortIndex: owner.gyms?.count ?? 0,
+            sourceGymID: source.id
+        )
+        copy.owner = owner
+        context.insert(copy)
+
+        for item in source.orderedEquipment {
+            let equipment = GymEquipment(
+                catalogItemID: item.catalogItemID,
+                name: item.name,
+                subtitle: item.subtitle,
+                category: item.machineCategory,
+                gridRow: item.gridRow,
+                gridColumn: item.gridColumn,
+                muscles: item.muscles,
+                howTo: item.howTo,
+                tips: item.tips,
+                uncertain: item.uncertain
+            )
+            equipment.gym = copy
+            context.insert(equipment)
+        }
+
+        for zone in source.zones ?? [] {
+            let stored = GymZone(name: zone.name, subtitle: zone.subtitle,
+                                 symbol: zone.symbol, colorHex: zone.colorHex,
+                                 startRow: zone.startRow, endRow: zone.endRow)
+            stored.gym = copy
+            context.insert(stored)
+        }
+
+        return copy
+    }
+}
