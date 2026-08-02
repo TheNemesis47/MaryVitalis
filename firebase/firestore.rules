@@ -32,8 +32,12 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/trainerLinks/$(linkId(trainerId, clientId)));
     }
 
+    function linkExists(trainerId, clientId) {
+      return exists(/databases/$(database)/documents/trainerLinks/$(linkId(trainerId, clientId)));
+    }
+
     function linkAccepted(trainerId, clientId) {
-      return exists(/databases/$(database)/documents/trainerLinks/$(linkId(trainerId, clientId)))
+      return linkExists(trainerId, clientId)
         && linkDoc(trainerId, clientId).data.status == 'accepted';
     }
 
@@ -46,8 +50,18 @@ service cloud.firestore {
     // ---------- Profili ----------
 
     match /users/{userId} {
-      // Il proprio profilo si legge sempre; quello altrui solo se lo si segue.
-      allow read: if isSelfOrAcceptedTrainer(userId);
+      // Tre casi, e solo tre:
+      // - il proprio profilo;
+      // - quello di un cliente che ha accettato di essere seguito;
+      // - quello di un trainer che ha mandato una richiesta a chi legge.
+      //
+      // L'ultimo non è una concessione di comodo: senza, il cliente riceve una
+      // richiesta di collegamento e non può sapere da chi arriva, quindi non
+      // può decidere. Il verso opposto resta chiuso finché non accetta — il
+      // trainer non vede il nome di chi sta invitando.
+      allow read: if isSelf(userId)
+        || linkAccepted(request.auth.uid, userId)
+        || linkExists(userId, request.auth.uid);
 
       // Il profilo lo scrive solo il proprietario, e non può cambiare
       // identificativo né promuoversi da solo ad admin.

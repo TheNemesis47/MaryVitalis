@@ -19,6 +19,13 @@ struct RoutinesView: View {
             VStack(alignment: .leading, spacing: 18) {
                 PageHeader(eyebrow: "Programmi", title: "Le schede", subtitle: subtitle)
 
+                // Un trainer lavora sulle proprie schede e su quelle dei
+                // clienti: passare dall'uno all'altro deve costare un tocco,
+                // non un giro dalle impostazioni.
+                if profile.visibleAccounts.count > 1 {
+                    profileSwitcher
+                }
+
                 if isForSomeoneElse, let owner {
                     Label("Stai lavorando sul profilo di \(owner.displayName): le schede che crei sono sue e le troverà sul suo telefono.",
                           systemImage: "person.2.fill")
@@ -90,6 +97,40 @@ struct RoutinesView: View {
             }
         } message: {
             Text("La scheda sparisce anche dagli altri dispositivi. Gli allenamenti già registrati restano nello storico.")
+        }
+    }
+
+    private var profileSwitcher: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(profile.visibleAccounts, id: \.id) { account in
+                    let selected = profile.viewedAccountID == account.id
+                    let tint = Color(hex: account.accentHex)
+                    Button {
+                        profile.viewAccount(account.id)
+                        store.activate(accountID: account.id)
+                        Feedback.tap()
+                    } label: {
+                        HStack(spacing: 7) {
+                            Image(systemName: account.id == profile.signedInAccountID
+                                  ? "person.fill" : account.symbolName)
+                                .font(.system(size: 12, weight: .bold))
+                            Text(account.id == profile.signedInAccountID
+                                 ? "Le mie" : account.displayName)
+                                .font(.system(size: 13.5, weight: .semibold))
+                        }
+                        .foregroundStyle(selected ? Color(hex: "#0a0f1a") : Theme.textDim)
+                        .padding(.horizontal, 13)
+                        .frame(minHeight: 36)
+                        .background(selected ? tint : Theme.surface, in: Capsule())
+                        .overlay(Capsule().stroke(selected ? .clear : Theme.border, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(selected ? .isSelected : [])
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 1)
         }
     }
 

@@ -370,6 +370,8 @@ final class CloudSync: ObservableObject {
     // MARK: - Ascolto
 
     private func observe(uid: String) {
+        // Le richieste ricevute: è quello che fa comparire "un trainer vuole
+        // seguirti" sul telefono del cliente.
         let links = FirebaseService.db.collection(FirestorePath.trainerLinks)
             .whereField("clientId", isEqualTo: uid)
             .addSnapshotListener { [weak self] snapshot, _ in
@@ -379,6 +381,31 @@ final class CloudSync: ObservableObject {
                         await self.applyLink(document.data())
                     }
                     try? self.context.save()
+                }
+            }
+
+        // I propri clienti. Senza questo, il trainer non vedrebbe mai arrivare
+        // l'accettazione: la scoprirebbe solo riavviando l'app.
+        let clients = FirebaseService.db.collection(FirestorePath.trainerLinks)
+            .whereField("trainerId", isEqualTo: uid)
+            .addSnapshotListener { [weak self] snapshot, _ in
+                guard let self, let snapshot else { return }
+                Task { @MainActor in
+                    for document in snapshot.documents {
+                        await self.applyLink(document.data())
+                        // Appena il cliente accetta, il suo profilo diventa
+                        // leggibile e le sue schede pure.
+                        if document.data()["status"] as? String == "accepted",
+                           let clientUID = document.data()["clientId"] as? String {
+                            await self.ensureAccount(firebaseUID: clientUID)
+                            await self.pullRoutines(ownedBy: clientUID)
+                            if let client = self.account(firebaseUID: clientUID) {
+                                await self.pullSessions(ownerUID: clientUID, account: client)
+                            }
+                        }
+                    }
+                    try? self.context.save()
+                    self.lastSync = Date()
                 }
             }
 
@@ -396,7 +423,7 @@ final class CloudSync: ObservableObject {
                 }
             }
 
-        listeners = [links, routines]
+        listeners = [links, clients, routines]
     }
 
     // MARK: - Applicazione in locale
@@ -408,22 +435,44 @@ final class CloudSync: ObservableObject {
     /// voluto, il nome altrui non si vede prima del consenso.
     @discardableResult
     func ensureAccount(firebaseUID uid: String) async -> UserAccount? {
-        if let existing = account(firebaseUID: uid) { return existing }
-        guard let data = try? await FirebaseService.db
-            .collection(FirestorePath.users).document(uid).getDocument().data() else { return nil }
+        let data = try? await FirebaseService.db
+            .collection(FirestorePath.users).document(uid).getDocument().data()
 
+        if let existing = account(firebaseUID: uid) {
+            // Il segnaposto creato prima del consenso si riempie appena il
+            // profilo diventa leggibile.
+            if let data { apply(data, to: existing) }
+            return existing
+        }
+
+        // Anche senza poter leggere il profilo si crea un segnaposto.
+        // Prima si tornava `nil`, e il collegamento veniva scartato: il
+        // cliente non vedeva mai arrivare la richiesta. Il nome arriva dopo,
+        // quando le regole lo concedono.
         let account = UserAccount(
-            displayName: data["displayName"] as? String ?? "Profilo",
-            email: data["email"] as? String,
+            displayName: data?["displayName"] as? String ?? "",
+            email: data?["email"] as? String,
             firebaseUID: uid,
-            role: UserRole(rawValue: data["role"] as? String ?? "") ?? .member,
-            symbolName: data["symbolName"] as? String ?? "person.crop.circle.fill",
-            accentHex: data["accentHex"] as? String ?? "#38bdf8",
-            inviteCode: data["inviteCode"] as? String ?? InviteCode.generate()
+            role: UserRole(rawValue: data?["role"] as? String ?? "") ?? .member,
+            symbolName: data?["symbolName"] as? String ?? "person.crop.circle.fill",
+            accentHex: data?["accentHex"] as? String ?? "#38bdf8",
+            inviteCode: data?["inviteCode"] as? String ?? ""
         )
         context.insert(account)
         try? context.save()
         return account
+    }
+
+    private func apply(_ data: [String: Any], to account: UserAccount) {
+        if let name = data["displayName"] as? String, !name.isEmpty {
+            account.displayName = name
+        }
+        if let role = data["role"] as? String { account.role = role }
+        if let symbol = data["symbolName"] as? String { account.symbolName = symbol }
+        if let accent = data["accentHex"] as? String { account.accentHex = accent }
+        if let code = data["inviteCode"] as? String, !code.isEmpty { account.inviteCode = code }
+        account.email = data["email"] as? String ?? account.email
+        try? context.save()
     }
 
     private func applyLink(_ data: [String: Any]) async {

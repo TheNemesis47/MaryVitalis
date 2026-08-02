@@ -150,6 +150,15 @@ try:
     st, _ = fs("GET", f"users/{client_id}", trainer_tok)
     check("in sospeso il trainer ancora NON legge il profilo", st == 403)
 
+    # Il verso opposto invece deve funzionare subito: chi riceve una richiesta
+    # ha il diritto di sapere da chi arriva, altrimenti non puo decidere.
+    st, body = fs("GET", f"users/{trainer_id}", client_tok)
+    name = body.get("fields", {}).get("displayName", {}).get("stringValue")
+    check("il cliente vede chi lo ha invitato", st == 200 and name == "Coach")
+
+    st, _ = fs("GET", f"users/{trainer_id}", other_tok)
+    check("un estraneo NON vede il profilo del trainer", st == 403)
+
     st, _ = fs("GET", f"trainerLinks/{link}", other_tok)
     check("un estraneo NON legge il legame altrui", st == 403)
 
