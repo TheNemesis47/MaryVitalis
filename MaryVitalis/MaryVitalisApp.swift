@@ -21,9 +21,11 @@ struct MaryVitalisApp: App {
         LegacyMigrator.runIfNeeded(context: context)
         let profileStore = ProfileStore(context: context)
         let cloudSync = CloudSync(context: context)
+        let workoutStore = WorkoutStore(context: context)
         profileStore.cloud = cloudSync
+        workoutStore.cloud = cloudSync
 
-        _store = StateObject(wrappedValue: WorkoutStore(context: context))
+        _store = StateObject(wrappedValue: workoutStore)
         _profile = StateObject(wrappedValue: profileStore)
         _cloud = StateObject(wrappedValue: cloudSync)
     }

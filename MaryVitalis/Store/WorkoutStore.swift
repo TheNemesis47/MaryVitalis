@@ -33,6 +33,8 @@ final class WorkoutStore: ObservableObject {
 
     private let context: ModelContext
     private(set) var ownerAccountID: UUID?
+    /// Collegato dopo l'avvio, come per `ProfileStore`.
+    var cloud: CloudSync?
 
     init(context: ModelContext) {
         self.context = context
@@ -90,6 +92,7 @@ final class WorkoutStore: ObservableObject {
             existing.completedSets = next
             existing.updatedAt = .now
             save()
+            pushDayProgress(routineID: routineID, dayID: dayID)
             return next > before
         }
 
@@ -101,7 +104,18 @@ final class WorkoutStore: ObservableObject {
             completedSets: next
         ))
         save()
+        pushDayProgress(routineID: routineID, dayID: dayID)
         return next > 0
+    }
+
+    /// Manda sul cloud la giornata intera: una scrittura, non una per serie.
+    private func pushDayProgress(routineID: UUID, dayID: UUID) {
+        guard let cloud, let uid = activeAccount?.firebaseUID else { return }
+        let completed = dayProgress(routineID: routineID, dayID: dayID)
+        Task {
+            await cloud.pushDayProgress(ownerUID: uid, routineID: routineID,
+                                        dayID: dayID, completed: completed)
+        }
     }
 
     func resetDay(routineID: UUID, dayID: UUID) {
@@ -117,6 +131,7 @@ final class WorkoutStore: ObservableObject {
             context.delete(row)
         }
         save()
+        pushDayProgress(routineID: routineID, dayID: dayID)
     }
 
     func stats(routine: Routine, dayIndex: Int) -> DayStats {
@@ -155,7 +170,9 @@ final class WorkoutStore: ObservableObject {
                     sips: Int,
                     effort: Int?) {
         guard let ownerAccountID else { return }
-        context.insert(WorkoutSession(
+        // Si tiene il riferimento a quella appena creata: cercarla per data
+        // pescherebbe un altro allenamento fatto lo stesso giorno.
+        let session = WorkoutSession(
             ownerAccountID: ownerAccountID,
             routineID: routine.id,
             routineName: routine.name,
@@ -168,13 +185,22 @@ final class WorkoutStore: ObservableObject {
             setsDone: stats.setsDone,
             sips: sips,
             effort: effort
-        ))
+        )
+        context.insert(session)
         save()
         reloadHistory()
         publishWidgetSnapshot()
+
+        if let cloud, let uid = activeAccount?.firebaseUID {
+            Task { await cloud.pushSession(session, ownerUID: uid) }
+        }
     }
 
     func clearHistory() {
+        if let cloud {
+            let sessions = history
+            Task { await cloud.deleteSessions(sessions) }
+        }
         for session in history {
             context.delete(session)
         }

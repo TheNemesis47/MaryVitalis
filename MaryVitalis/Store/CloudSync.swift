@@ -127,6 +127,152 @@ final class CloudSync: ObservableObject {
             .document(id.uuidString).delete()
     }
 
+    // MARK: - Storico e progressi
+
+    /// Un allenamento concluso. Una scrittura sola, a fine sessione: è il dato
+    /// che alimenta il recap e che il trainer legge per capire come sta andando.
+    func pushSession(_ session: WorkoutSession, ownerUID: String) async {
+        guard FirebaseService.isConfigured else { return }
+        do {
+            try await FirebaseService.db.collection(FirestorePath.sessions)
+                .document(session.id.uuidString).setData([
+                    "id": session.id.uuidString,
+                    "ownerId": ownerUID,
+                    "routineId": session.routineID.uuidString,
+                    "routineName": session.routineName,
+                    "accentHex": session.accentHex,
+                    "dayIndex": session.dayIndex,
+                    "dayName": session.dayName,
+                    "dateKey": session.dateKey,
+                    "duration": session.duration,
+                    "sets": session.sets,
+                    "setsDone": session.setsDone,
+                    "sips": session.sips,
+                    "effort": session.effort as Any
+                ])
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    func deleteSessions(_ sessions: [WorkoutSession]) async {
+        guard FirebaseService.isConfigured else { return }
+        for session in sessions {
+            try? await FirebaseService.db.collection(FirestorePath.sessions)
+                .document(session.id.uuidString).delete()
+        }
+    }
+
+    /// I progressi di una giornata stanno in **un documento solo**, con le
+    /// serie completate in una mappa. Una riga per esercizio moltiplicherebbe
+    /// le scritture per niente: si legge e si scrive sempre tutta la giornata.
+    func pushDayProgress(ownerUID: String,
+                         routineID: UUID,
+                         dayID: UUID,
+                         completed: [UUID: Int]) async {
+        guard FirebaseService.isConfigured else { return }
+        let id = "\(ownerUID)_\(routineID.uuidString)_\(dayID.uuidString)"
+        let sets = Dictionary(completed.map { ($0.key.uuidString, $0.value) },
+                              uniquingKeysWith: { current, _ in current })
+        do {
+            try await FirebaseService.db.collection(FirestorePath.progress)
+                .document(id).setData([
+                    "ownerId": ownerUID,
+                    "routineId": routineID.uuidString,
+                    "dayId": dayID.uuidString,
+                    "sets": sets,
+                    "updatedAt": Timestamp(date: .now)
+                ])
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    private func pullSessions(ownerUID: String, account: UserAccount) async {
+        guard let documents = try? await FirebaseService.db.collection(FirestorePath.sessions)
+            .whereField("ownerId", isEqualTo: ownerUID).getDocuments() else { return }
+
+        for document in documents.documents {
+            applySession(document.data(), ownerAccountID: account.id)
+        }
+        try? context.save()
+    }
+
+    private func applySession(_ data: [String: Any], ownerAccountID: UUID) {
+        guard let rawID = data["id"] as? String, let id = UUID(uuidString: rawID),
+              let rawRoutine = data["routineId"] as? String,
+              let routineID = UUID(uuidString: rawRoutine) else { return }
+
+        var descriptor = FetchDescriptor<WorkoutSession>(predicate: #Predicate { $0.id == id })
+        descriptor.fetchLimit = 1
+        // Un allenamento concluso non cambia più: se c'è già, si lascia stare.
+        if (try? context.fetch(descriptor).first) != nil { return }
+
+        context.insert(WorkoutSession(
+            id: id,
+            ownerAccountID: ownerAccountID,
+            routineID: routineID,
+            routineName: data["routineName"] as? String ?? "",
+            accentHex: data["accentHex"] as? String ?? "#38bdf8",
+            dayIndex: data["dayIndex"] as? Int ?? 0,
+            dayName: data["dayName"] as? String ?? "",
+            dateKey: data["dateKey"] as? String ?? "",
+            duration: data["duration"] as? Double ?? 0,
+            sets: data["sets"] as? Int ?? 0,
+            setsDone: data["setsDone"] as? Int ?? 0,
+            sips: data["sips"] as? Int ?? 0,
+            effort: data["effort"] as? Int
+        ))
+    }
+
+    private func pullProgress(ownerUID: String, account: UserAccount) async {
+        guard let documents = try? await FirebaseService.db.collection(FirestorePath.progress)
+            .whereField("ownerId", isEqualTo: ownerUID).getDocuments() else { return }
+
+        for document in documents.documents {
+            applyProgress(document.data(), ownerAccountID: account.id)
+        }
+        try? context.save()
+    }
+
+    private func applyProgress(_ data: [String: Any], ownerAccountID: UUID) {
+        guard let rawRoutine = data["routineId"] as? String,
+              let routineID = UUID(uuidString: rawRoutine),
+              let rawDay = data["dayId"] as? String,
+              let dayID = UUID(uuidString: rawDay),
+              let sets = data["sets"] as? [String: Int] else { return }
+
+        let remoteUpdate = (data["updatedAt"] as? Timestamp)?.dateValue() ?? .distantPast
+
+        for (rawItem, count) in sets {
+            guard let itemID = UUID(uuidString: rawItem) else { continue }
+            var descriptor = FetchDescriptor<DayProgress>(
+                predicate: #Predicate {
+                    $0.ownerAccountID == ownerAccountID
+                        && $0.routineID == routineID
+                        && $0.dayID == dayID
+                        && $0.itemID == itemID
+                }
+            )
+            descriptor.fetchLimit = 1
+
+            if let existing = try? context.fetch(descriptor).first {
+                // Vince chi ha scritto per ultimo, come per le schede.
+                if existing.updatedAt < remoteUpdate {
+                    existing.completedSets = count
+                    existing.updatedAt = remoteUpdate
+                }
+            } else {
+                context.insert(DayProgress(ownerAccountID: ownerAccountID,
+                                           routineID: routineID,
+                                           dayID: dayID,
+                                           itemID: itemID,
+                                           completedSets: count,
+                                           updatedAt: remoteUpdate))
+            }
+        }
+    }
+
     // MARK: - Cancellazione
 
     /// Cancella dal cloud tutto quello che appartiene a un profilo.
@@ -177,9 +323,18 @@ final class CloudSync: ObservableObject {
         await pullLinks(uid: uid)
         await pullRoutines(ownedBy: uid)
 
-        // Le schede dei clienti seguiti: è il motivo per cui esiste tutto questo.
+        if let account = account(firebaseUID: uid) {
+            await pullSessions(ownerUID: uid, account: account)
+            await pullProgress(ownerUID: uid, account: account)
+        }
+
+        // Schede e storico dei clienti seguiti: è il motivo per cui esiste
+        // tutto questo. Lo storico il trainer lo legge soltanto.
         for clientUID in acceptedClientUIDs(trainerUID: uid) {
             await pullRoutines(ownedBy: clientUID)
+            if let client = account(firebaseUID: clientUID) {
+                await pullSessions(ownerUID: clientUID, account: client)
+            }
         }
     }
 
