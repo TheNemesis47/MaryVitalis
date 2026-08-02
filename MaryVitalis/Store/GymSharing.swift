@@ -120,6 +120,20 @@ extension ProfileStore {
     func importGym(code rawCode: String, for owner: UserAccount) async throws -> Gym {
         let code = InviteCode.normalize(rawCode)
         guard InviteCode.isValid(code) else { throw GymError.invalidCode }
+
+        // La Birreria è dentro l'app, non su Firestore: si importa anche senza
+        // rete e senza che qualcuno la tenga pubblicata. Chi si allena lì digita
+        // il codice; a tutti gli altri non compare da nessuna parte.
+        if code == GymBirreria.code {
+            let gym = GymBirreria.insert(for: owner, into: context)
+            try context.save()
+            objectWillChange.send()
+            if let cloud, let ownerUID = owner.firebaseUID {
+                await cloud.pushGym(gym, ownerUID: ownerUID)
+            }
+            return gym
+        }
+
         guard let cloud, let remote = try await cloud.fetchSharedGym(code: code) else {
             throw GymError.unknownCode
         }

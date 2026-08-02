@@ -12,8 +12,16 @@ enum InviteCode {
 
     private static let alphabet = Array("23456789ABCDEFGHJKMNPQRSTUVWXYZ")
 
+    /// I codici che l'app si tiene per sé: sono già assegnati a qualcosa, e
+    /// generarli per una sede vera la renderebbe irraggiungibile.
+    static let reserved: Set<String> = ["BRRERA"]
+
     static func generate() -> String {
-        String((0..<length).map { _ in alphabet.randomElement() ?? "A" })
+        var code: String
+        repeat {
+            code = String((0..<length).map { _ in alphabet.randomElement() ?? "A" })
+        } while reserved.contains(code)
+        return code
     }
 
     /// Accetta quello che l'utente ha digitato comunque l'abbia scritto:

@@ -778,6 +778,14 @@ struct ImportGymSheet: View {
                         .font(.caption)
                         .foregroundStyle(Theme.textFaint)
                         .fixedSize(horizontal: false, vertical: true)
+
+                    Button("Ti alleni da \(GymBirreria.brand) \(GymBirreria.name)?") {
+                        code = GymBirreria.code
+                        Task { await importGym() }
+                    }
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Theme.defaultAccent)
+                    .padding(.top, 4)
                 }
                 .padding(18)
             }

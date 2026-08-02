@@ -385,6 +385,32 @@ func run() async throws {
     context.delete(lontano)
     try context.save()
 
+    print("\n[La Birreria ricostruita]")
+    let birreria = GymBirreria.insert(for: bea, into: context)
+    try context.save()
+    check("tutti gli attrezzi del rilievo hanno un posto",
+          birreria.orderedEquipment.count == GymBirreria.placements.count)
+    check("nessuna cella occupata due volte",
+          Set(birreria.orderedEquipment.map { "\($0.gridRow)-\($0.gridColumn)" }).count
+            == birreria.orderedEquipment.count)
+    check("nessuno finisce fuori dalla griglia",
+          birreria.orderedEquipment.allSatisfy {
+              $0.gridRow >= 0 && $0.gridRow < GymBirreria.rows
+                  && $0.gridColumn >= 0 && $0.gridColumn < GymBirreria.columns
+          })
+    check("le istruzioni si portano dietro l'attrezzo",
+          birreria.orderedEquipment.contains { !$0.howTo.isEmpty })
+    check("le zone restano fasce di righe valide",
+          (birreria.zones ?? []).allSatisfy {
+              $0.startRow <= $0.endRow && $0.endRow < GymBirreria.rows
+          })
+    check("è di chi la importa", birreria.owner?.id == bea.id)
+    // Il codice è dell'app: se venisse generato per una sede vera, quella sede
+    // non si potrebbe più importare.
+    check("il codice riservato non esce dal generatore",
+          (0..<2_000).allSatisfy { _ in InviteCode.generate() != GymBirreria.code })
+    check("il codice riservato è digitabile", InviteCode.isValid(GymBirreria.code))
+
     print("\n[cancellazione della sede]")
     let daButtare = GymFactory.insertEmpty(named: "Sede di passaggio", owner: anna, into: context)
     try context.save()

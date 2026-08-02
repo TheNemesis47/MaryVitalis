@@ -23,6 +23,7 @@ swiftc -parse-as-library \
   "$P/Data/Models.swift" \
   "$P/Data/SeedRoutines.swift" \
   "$P/Data/RoutineFactory.swift" "$P/Data/GymFactory.swift" "$P/Data/InviteCode.swift" \
+  "$P/Data/GymBirreria.swift" \
   "$P/Model/GymMachine.swift" \
   "$P/Model/UserRole.swift" \
   "$P/Model/Routine.swift" "$P/Model/GymLocation.swift" "$P/Model/GymMapData.swift" \
