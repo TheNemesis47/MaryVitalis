@@ -25,7 +25,7 @@ final class WorkoutStore: ObservableObject {
     @Published private(set) var progress: [String: [Int: [Int: Int]]] = [:]
     @Published private(set) var history: [HistoryEntry] = []
     @Published var restDefault: Int = WorkoutStore.defaultRest {
-        didSet { defaults.set(restDefault, forKey: Keys.rest) }
+        didSet { defaults.set(restDefault, forKey: restKey(for: activeUserID)) }
     }
 
     static let restOptions = [45, 60, 90, 120]
@@ -36,10 +36,12 @@ final class WorkoutStore: ObservableObject {
     private enum Keys {
         static let progress = "mv:progress"
         static let history = "mv:history"
-        static let rest = "mv:rest-default"
+        static let legacyRest = "mv:rest-default"
+        static let restPrefix = "mv:rest-default:"
     }
 
     private let defaults = UserDefaults.standard
+    private var activeUserID = RoutineData.samuel.id
 
     init() {
         if let data = defaults.data(forKey: Keys.progress),
@@ -59,8 +61,28 @@ final class WorkoutStore: ObservableObject {
            let decoded = try? JSONDecoder().decode([HistoryEntry].self, from: data) {
             history = decoded
         }
-        restDefault = defaults.object(forKey: Keys.rest) as? Int ?? WorkoutStore.defaultRest
+        let selected = MaryVitalisShared.selectedUserID
+        activeUserID = RoutineData.routine(id: selected) == nil ? RoutineData.samuel.id : selected
+        restDefault = storedRest(for: activeUserID)
         publishWidgetSnapshot(selectedUserID: MaryVitalisShared.selectedUserID)
+    }
+
+    func activateUser(_ userID: String) {
+        guard RoutineData.routine(id: userID) != nil else { return }
+        activeUserID = userID
+        restDefault = storedRest(for: userID)
+        publishWidgetSnapshot(selectedUserID: userID)
+    }
+
+    private func storedRest(for userID: String) -> Int {
+        let value = defaults.object(forKey: restKey(for: userID)) as? Int
+            ?? defaults.object(forKey: Keys.legacyRest) as? Int
+            ?? WorkoutStore.defaultRest
+        return min(600, max(15, value))
+    }
+
+    private func restKey(for userID: String) -> String {
+        Keys.restPrefix + userID
     }
 
     // MARK: - Progressi
@@ -122,10 +144,10 @@ final class WorkoutStore: ObservableObject {
         publishWidgetSnapshot(selectedUserID: MaryVitalisShared.selectedUserID)
     }
 
-    func clearHistory() {
-        history = []
+    func clearHistory(userID: String) {
+        history.removeAll { $0.routineId == userID }
         persistHistory()
-        publishWidgetSnapshot(selectedUserID: MaryVitalisShared.selectedUserID)
+        publishWidgetSnapshot(selectedUserID: userID)
     }
 
     private func persistHistory() {
@@ -134,15 +156,11 @@ final class WorkoutStore: ObservableObject {
         }
     }
 
-    /// Pallini colorati per il calendario: [iso: [colori]].
-    var calendarMarks: [String: [String]] {
-        history.reduce(into: [String: [String]]()) { acc, entry in
+    /// Pallini colorati per il calendario del profilo: [iso: [colori]].
+    func calendarMarks(userID: String) -> [String: [String]] {
+        history.filter { $0.routineId == userID }.reduce(into: [String: [String]]()) { acc, entry in
             acc[entry.date, default: []].append(entry.accentHex)
         }
-    }
-
-    var sortedHistory: [HistoryEntry] {
-        history.sorted { $0.date < $1.date }
     }
 
     // MARK: - Widget e comandi dalla Lock Screen

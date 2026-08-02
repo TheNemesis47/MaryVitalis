@@ -5,12 +5,28 @@ enum Tab: Hashable {
 }
 
 struct RootView: View {
+    @EnvironmentObject private var profile: ProfileStore
+    @EnvironmentObject private var store: WorkoutStore
+
     @State private var tab: Tab = .home
     @State private var routinePath: [String] = []
     /// Filtro iniziale passato dalla home quando si tocca un distretto.
     @State private var exercisePreset: ExercisesView.Preset?
 
     var body: some View {
+        Group {
+            if profile.isSignedIn {
+                mainTabs
+            } else {
+                LoginView()
+            }
+        }
+        .onAppear { activateSelectedUser() }
+        .onChange(of: profile.selectedUserID) { _, _ in activateSelectedUser() }
+        .onChange(of: profile.signedInAccountID) { _, _ in activateSelectedUser() }
+    }
+
+    private var mainTabs: some View {
         TabView(selection: $tab) {
             NavigationStack {
                 HomeView(openBodyPart: { part in
@@ -33,7 +49,7 @@ struct RootView: View {
             NavigationStack(path: $routinePath) {
                 RoutinesView()
                     .navigationDestination(for: String.self) { id in
-                        if let routine = RoutineData.routine(id: id) {
+                        if let routine = profile.availableRoutines.first(where: { $0.id == id }) {
                             RoutineDetailView(routine: routine)
                         } else {
                             EmptyStateView(icon: "🤔", title: "Scheda non trovata",
@@ -57,6 +73,11 @@ struct RootView: View {
             .tag(Tab.recap)
         }
         .tint(Theme.defaultAccent)
+    }
+
+    private func activateSelectedUser() {
+        guard profile.isSignedIn else { return }
+        store.activateUser(profile.selectedUserID)
     }
 }
 

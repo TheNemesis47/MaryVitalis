@@ -81,14 +81,14 @@ struct HomeView: View {
             StatTile(value: "\(library.all.count)", label: "Esercizi")
             StatTile(value: "\(library.targets.count)", label: "Gruppi muscolari")
             StatTile(value: "\(GymCatalog.defaultLocation.machines.count)", label: "Attrezzi mappati")
-            StatTile(value: "\(RoutineData.all.count)", label: "Schede attive")
+            StatTile(value: "\(profile.availableRoutines.count)", label: "Schede accessibili")
         }
     }
 
     private var routines: some View {
         VStack(alignment: .leading, spacing: 12) {
             SectionHeader(title: "Le schede di allenamento", trailing: "Vedi tutte →") { goToTab(.schede) }
-            ForEach(RoutineData.all) { routine in
+            ForEach(profile.availableRoutines) { routine in
                 RoutineCard(routine: routine, daysDone: store.completedDays(routine: routine)) {
                     openRoutine(routine.id)
                 }

@@ -46,6 +46,17 @@ struct RoutineDetailView: View {
                 detail: day.exercises[$0].details,
                 machines: GymCatalog.machines(for: day.exercises[$0].query)
             ) },
+            completed: day.exercises.indices.compactMap { index in
+                let item = day.exercises[index]
+                guard store.doneCount(routineId: routine.id, day: activeDay, exercise: index) >= item.plan.sets else {
+                    return nil
+                }
+                return MapHighlight.Item(
+                    title: exerciseName(at: index),
+                    detail: item.details,
+                    machines: GymCatalog.machines(for: item.query)
+                )
+            },
             accent: accent
         )
     }
@@ -91,14 +102,17 @@ struct RoutineDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showMap = true } label: {
+                Button {
+                    mapFocus = nil
+                    showMap = true
+                } label: {
                     Image(systemName: "map.fill")
                 }
             }
         }
         .sheet(item: $detail) { ExerciseDetailView(detail: $0) }
         .sheet(isPresented: $askDate) {
-            DateSheet(initial: DateKey.iso(Date()), marks: store.calendarMarks, accent: accent) { date in
+            DateSheet(initial: DateKey.iso(Date()), marks: store.calendarMarks(userID: routine.id), accent: accent) { date in
                 askDate = false
                 session.start(
                     date: date,
@@ -120,11 +134,15 @@ struct RoutineDetailView: View {
                 onDiscard: { askEffort = false; session.stop() }
             )
         }
-        .sheet(isPresented: $showMap) {
+        .sheet(isPresented: $showMap, onDismiss: { mapFocus = nil }) {
             NavigationStack {
-                GymMapView(highlight: session.isRunning ? highlight : nil, focus: mapFocus)
+                GymMapView(highlight: session.isRunning ? highlight : nil,
+                           focus: mapFocus,
+                           showsDismissButton: true)
             }
             .presentationBackground(Theme.bg)
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
         .onChange(of: activeDay) { _, _ in
             if !session.isRunning { session.stop() }

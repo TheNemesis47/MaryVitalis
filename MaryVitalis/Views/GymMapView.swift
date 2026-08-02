@@ -10,10 +10,12 @@ struct MapHighlight {
 
     let current: Item?
     let next: Item?
+    let completed: [Item]
     let accent: Color
 
     var currentIDs: Set<String> { Set(current?.machines.map(\.id) ?? []) }
     var nextIDs: Set<String> { Set(next?.machines.map(\.id) ?? []) }
+    var completedIDs: Set<String> { Set(completed.flatMap { $0.machines.map(\.id) }) }
 }
 
 private struct EquipmentFloorRow: Identifiable {
@@ -28,10 +30,12 @@ private struct EquipmentFloorRow: Identifiable {
 /// sono separate dal corridoio centrale; gli spazi vuoti del rilievo restano
 /// vuoti, quindi nessuna postazione viene ricompattata.
 struct GymMapView: View {
-    var highlight: MapHighlight?
-    var focus: GymMachine?
+    var highlight: MapHighlight? = nil
+    var focus: GymMachine? = nil
+    var showsDismissButton = false
 
     @AppStorage("mv:selected-gym") private var selectedGymID = GymCatalog.defaultLocation.id
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @State private var selected: GymMachine?
@@ -42,38 +46,58 @@ struct GymMapView: View {
     }
 
     private var accent: Color { highlight?.accent ?? Theme.defaultAccent }
+    private let nextAccent = Color(hex: "#f59e0b")
+    private let completedAccent = Color(hex: "#64748b")
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: true) {
-            LazyVStack(alignment: .leading, spacing: 18) {
-                locationHeader
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: true) {
+                LazyVStack(alignment: .leading, spacing: 18) {
+                    locationHeader
 
-                if let highlight, highlight.current != nil || highlight.next != nil {
-                    highlightBanner(highlight)
+                    if let highlight, highlight.current != nil || highlight.next != nil {
+                        highlightBanner(highlight)
+                    }
+
+                    gridHeader
+
+                    if filteredMachines.isEmpty {
+                        emptySearchState
+                    } else {
+                        floorPlan
+                    }
                 }
-
-                gridHeader
-
-                if filteredMachines.isEmpty {
-                    emptySearchState
-                } else {
-                    floorPlan
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 32)
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .task(id: scrollTargetRowID) {
+                guard let rowID = scrollTargetRowID else { return }
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                withAnimation(.easeInOut(duration: 0.28)) {
+                    proxy.scrollTo(rowID, anchor: .center)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 32)
         }
-        .scrollDismissesKeyboard(.interactively)
         .pageBackground()
         .navigationTitle("Mappa")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $searchText, prompt: "Attrezzo o gruppo muscolare")
+        .toolbar {
+            if showsDismissButton {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { dismiss() } label: {
+                        Label("Abbassa", systemImage: "chevron.down")
+                    }
+                    .accessibilityHint("Chiude la mappa e torna alla scheda")
+                }
+            }
+        }
         .sheet(item: $selected) { machine in
             NavigationStack { MachineDetailView(machine: machine, gym: gym) }
                 .presentationBackground(Theme.bg)
         }
-        .onAppear { selected = focus }
         .onChange(of: selectedGymID) { _, _ in
             searchText = ""
             selected = nil
@@ -188,6 +212,7 @@ struct GymMapView: View {
 
             ForEach(Array(spatialFloorRows.enumerated()), id: \.element.id) { index, row in
                 floorRow(row, index: index)
+                    .id(row.id)
             }
         }
         .padding(8)
@@ -292,9 +317,11 @@ struct GymMapView: View {
     private func machineButton(_ machine: GymMachine, column: Int) -> some View {
         let isCurrent = highlight?.currentIDs.contains(machine.id) ?? false
         let isNext = highlight?.nextIDs.contains(machine.id) ?? false
-        let stateColor = isCurrent ? accent : (isNext ? accent.opacity(0.82) : Theme.borderHi)
+        let isCompleted = !isCurrent && !isNext && (highlight?.completedIDs.contains(machine.id) ?? false)
+        let isHighlighted = isCurrent || isNext || isCompleted
+        let stateColor = isCurrent ? accent : (isNext ? nextAccent : (isCompleted ? completedAccent : Theme.borderHi))
         let zone = gym.zone(for: machine)
-        let iconTint = isCurrent || isNext ? accent : Theme.textDim
+        let iconTint = isHighlighted ? stateColor : Theme.textDim
 
         return Button {
             selected = machine
@@ -307,22 +334,22 @@ struct GymMapView: View {
                         .rotationEffect(symbolRotation(for: machine, column: column))
                         .shadow(color: Color.black.opacity(0.24), radius: 2, y: 2)
 
-                    if isCurrent || isNext {
-                        Text(isCurrent ? "ORA" : "POI")
+                    if isHighlighted {
+                        Text(isCurrent ? "ORA" : (isNext ? "POI" : "FATTO"))
                             .font(.system(size: 7, weight: .black))
                             .tracking(0.4)
-                            .foregroundStyle(isCurrent ? Color(hex: "#07101b") : accent)
+                            .foregroundStyle(isCompleted ? Theme.text : Color(hex: "#07101b"))
                             .padding(.horizontal, 4)
                             .frame(minHeight: 17)
-                            .background(isCurrent ? accent : Theme.bgSoft, in: Capsule())
-                            .overlay(Capsule().stroke(accent.opacity(0.4), lineWidth: 1))
+                            .background(stateColor.opacity(isCompleted ? 0.72 : 1), in: Capsule())
+                            .overlay(Capsule().stroke(stateColor.opacity(0.7), lineWidth: 1))
                             .offset(x: 10, y: -5)
                     }
                 }
 
                 Text(planLabel(for: machine))
                     .font(.system(size: 9.5, weight: .bold))
-                    .foregroundStyle(Theme.text)
+                    .foregroundStyle(isCompleted ? Theme.textDim : Theme.text)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                     .minimumScaleFactor(0.72)
@@ -339,12 +366,12 @@ struct GymMapView: View {
             .padding(.vertical, 7)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             .background(
-                isCurrent || isNext ? stateColor.opacity(isCurrent ? 0.14 : 0.08) : .clear,
+                isHighlighted ? stateColor.opacity(isCurrent ? 0.14 : (isNext ? 0.11 : 0.07)) : .clear,
                 in: RoundedRectangle(cornerRadius: Theme.rSm, style: .continuous)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.rMd, style: .continuous)
-                    .stroke(isCurrent || isNext ? stateColor : .clear, lineWidth: isCurrent ? 2 : 1)
+                    .stroke(isHighlighted ? stateColor : .clear, lineWidth: isCurrent ? 2 : 1)
             )
             .contentShape(RoundedRectangle(cornerRadius: Theme.rMd, style: .continuous))
         }
@@ -367,6 +394,14 @@ struct GymMapView: View {
                     .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
                     .contains(normalizedQuery)
             }
+    }
+
+    private var scrollTargetRowID: String? {
+        let machineID = focus?.id ?? highlight?.current?.machines.first?.id
+        guard let machineID else { return nil }
+        return spatialFloorRows.first { row in
+            row.machines.contains { $0?.id == machineID }
+        }?.id
     }
 
     /// Converte il rilievo continuo in una pianta sparsa di quattro corsie.
@@ -522,6 +557,7 @@ struct GymMapView: View {
         parts.append("Area: \(zone?.name ?? "Sala principale")")
         if highlight?.currentIDs.contains(machine.id) == true { parts.append("Esercizio attuale") }
         if highlight?.nextIDs.contains(machine.id) == true { parts.append("Esercizio successivo") }
+        if highlight?.completedIDs.contains(machine.id) == true { parts.append("Esercizio completato") }
         return parts.joined(separator: ". ")
     }
 
@@ -555,7 +591,7 @@ struct GymMapView: View {
                 banner(tag: "ORA", item: current, color: accent, filled: true)
             }
             if let next = highlight.next {
-                banner(tag: "POI", item: next, color: accent.opacity(0.76), filled: false)
+                banner(tag: "POI", item: next, color: nextAccent, filled: false)
             }
         }
     }

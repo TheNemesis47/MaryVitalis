@@ -83,6 +83,10 @@ struct WorkoutActivityAttributes: ActivityAttributes {
         var details: String
         var completedSets: Int
         var totalSets: Int
+
+        var isCardio: Bool {
+            details.range(of: "min", options: .caseInsensitive) != nil
+        }
     }
 
     struct ContentState: Codable, Hashable {

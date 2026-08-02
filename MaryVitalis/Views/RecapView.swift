@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RecapView: View {
     @EnvironmentObject private var store: WorkoutStore
+    @EnvironmentObject private var profile: ProfileStore
 
     @State private var weekOffset = 0
     @State private var month = Date()
@@ -10,9 +11,14 @@ struct RecapView: View {
 
     private var weekStart: Date { DateKey.adding(days: weekOffset * 7, to: DateKey.startOfWeek(Date())) }
     private var weekEnd: Date { DateKey.adding(days: 6, to: weekStart) }
+    private var routine: Routine { profile.selectedRoutine }
+    private var history: [HistoryEntry] {
+        store.history.filter { $0.routineId == profile.selectedUserID }
+    }
+    private var sortedHistory: [HistoryEntry] { history.sorted { $0.date < $1.date } }
 
     private var inWeek: [HistoryEntry] {
-        store.history.filter { entry in
+        history.filter { entry in
             let d = DateKey.date(from: entry.date)
             return d >= weekStart && d <= weekEnd
         }
@@ -22,10 +28,10 @@ struct RecapView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 PageHeader(eyebrow: "Statistiche", title: "Recap",
-                           subtitle: store.history.isEmpty ? nil
-                           : "Allenamenti svolti, carico settimanale e andamento dello sforzo percepito.")
+                           subtitle: history.isEmpty ? "Profilo di \(routine.name)"
+                           : "\(routine.name): allenamenti svolti, carico settimanale e andamento dello sforzo percepito.")
 
-                if store.history.isEmpty {
+                if history.isEmpty {
                     EmptyStateView(icon: "📊", title: "Ancora nessun allenamento",
                                    message: "Completa una scheda e segna lo sforzo: qui troverai calendario, statistiche e andamento.")
                 } else {
@@ -45,7 +51,11 @@ struct RecapView: View {
         .navigationBarTitleDisplayMode(.inline)
         .alert("Cancellare tutto lo storico degli allenamenti?", isPresented: $confirmClear) {
             Button("Annulla", role: .cancel) {}
-            Button("Cancella", role: .destructive) { store.clearHistory() }
+            Button("Cancella", role: .destructive) { store.clearHistory(userID: profile.selectedUserID) }
+        }
+        .onChange(of: profile.selectedUserID) { _, _ in
+            weekOffset = 0
+            pickedDay = nil
         }
     }
 
@@ -91,22 +101,20 @@ struct RecapView: View {
         VStack(alignment: .leading, spacing: 10) {
             CalendarView(month: $month, selected: pickedDay,
                          onSelect: { iso in pickedDay = (iso == pickedDay ? nil : iso) },
-                         marks: store.calendarMarks)
+                         marks: store.calendarMarks(userID: profile.selectedUserID))
 
             HStack(spacing: 12) {
-                ForEach(RoutineData.all) { routine in
-                    HStack(spacing: 5) {
-                        Circle().fill(routine.accent).frame(width: 7, height: 7)
-                        Text(routine.name)
-                            .font(.system(size: 11.5))
-                            .foregroundStyle(Theme.textFaint)
-                    }
+                HStack(spacing: 5) {
+                    Circle().fill(routine.accent).frame(width: 7, height: 7)
+                    Text(routine.name)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Theme.textFaint)
                 }
                 Spacer(minLength: 0)
             }
 
             if let pickedDay {
-                let entries = store.history.filter { $0.date == pickedDay }
+                let entries = history.filter { $0.date == pickedDay }
                 Panel {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(DateKey.long(DateKey.date(from: pickedDay)))
@@ -134,7 +142,7 @@ struct RecapView: View {
                 Text("Andamento dello sforzo")
                     .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(Theme.text)
-                EffortTrend(entries: store.sortedHistory)
+                EffortTrend(entries: sortedHistory)
             }
         }
     }
@@ -147,18 +155,16 @@ struct RecapView: View {
                     .foregroundStyle(Theme.text)
                     .padding(.bottom, 4)
 
-                ForEach(RoutineData.all) { routine in
-                    RecapLine(left: "\(routine.emoji) \(routine.name)",
-                              right: summary(for: routine),
-                              leftColor: routine.accent)
-                }
+                RecapLine(left: "\(routine.emoji) \(routine.name)",
+                          right: summary(for: routine),
+                          leftColor: routine.accent)
             }
         }
     }
 
     /// "3 sessioni · sforzo 6.3 · 58 min"
     private func summary(for routine: Routine) -> String {
-        let list = store.history.filter { $0.routineId == routine.id }
+        let list = history.filter { $0.routineId == routine.id }
         var text = Fmt.plural(list.count, "sessione", "sessioni")
         let efforts = list.compactMap { $0.effort }.map(Double.init)
         if !efforts.isEmpty { text += " · sforzo \(Fmt.round1(Fmt.average(efforts)))" }
@@ -171,7 +177,7 @@ struct RecapView: View {
             SectionHeader(title: "Ultimi allenamenti", trailing: "Azzera storico") { confirmClear = true }
             Panel {
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(store.sortedHistory.suffix(12).reversed()) { entry in
+                    ForEach(sortedHistory.suffix(12).reversed()) { entry in
                         RecapLine(
                             left: "\(entry.routineName) · \(entry.dayName)",
                             right: "\(DateKey.short(DateKey.date(from: entry.date))) · \(Fmt.duration(entry.duration)) · \(entry.setsDone)/\(entry.sets) serie"

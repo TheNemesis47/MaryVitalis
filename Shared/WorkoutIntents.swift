@@ -5,6 +5,7 @@ import Foundation
 struct CompleteWorkoutSetIntent: LiveActivityIntent {
     static var title: LocalizedStringResource = "Completa serie"
     static var openAppWhenRun = false
+    static var authenticationPolicy: IntentAuthenticationPolicy = .alwaysAllowed
 
     @Parameter(title: "Attività") var activityID: String
     @Parameter(title: "Serie") var targetSet: Int
@@ -30,7 +31,7 @@ struct CompleteWorkoutSetIntent: LiveActivityIntent {
         state.selectedRestSeconds = restSeconds
 
         var restEndsAt: Date?
-        if increased {
+        if increased, !originalExercise.isCardio {
             restEndsAt = Date().addingTimeInterval(Double(restSeconds))
             state.restEndsAt = restEndsAt
             state.pausedRestSeconds = nil
@@ -69,6 +70,7 @@ struct CompleteWorkoutSetIntent: LiveActivityIntent {
 struct SelectWorkoutRestIntent: LiveActivityIntent {
     static var title: LocalizedStringResource = "Scegli recupero"
     static var openAppWhenRun = false
+    static var authenticationPolicy: IntentAuthenticationPolicy = .alwaysAllowed
 
     @Parameter(title: "Attività") var activityID: String
     @Parameter(title: "Secondi") var seconds: Int
@@ -101,6 +103,7 @@ struct SelectWorkoutRestIntent: LiveActivityIntent {
 struct AdjustWorkoutRestIntent: LiveActivityIntent {
     static var title: LocalizedStringResource = "Modifica recupero"
     static var openAppWhenRun = false
+    static var authenticationPolicy: IntentAuthenticationPolicy = .alwaysAllowed
 
     @Parameter(title: "Attività") var activityID: String
     @Parameter(title: "Secondi") var delta: Int
@@ -125,6 +128,7 @@ struct AdjustWorkoutRestIntent: LiveActivityIntent {
 struct ToggleWorkoutRestIntent: LiveActivityIntent {
     static var title: LocalizedStringResource = "Pausa o riprendi recupero"
     static var openAppWhenRun = false
+    static var authenticationPolicy: IntentAuthenticationPolicy = .alwaysAllowed
 
     @Parameter(title: "Attività") var activityID: String
 
@@ -150,6 +154,7 @@ struct ToggleWorkoutRestIntent: LiveActivityIntent {
 struct SkipWorkoutRestIntent: LiveActivityIntent {
     static var title: LocalizedStringResource = "Salta recupero"
     static var openAppWhenRun = false
+    static var authenticationPolicy: IntentAuthenticationPolicy = .alwaysAllowed
 
     @Parameter(title: "Attività") var activityID: String
 

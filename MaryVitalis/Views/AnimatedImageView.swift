@@ -17,8 +17,10 @@ struct AnimatedImageView: View {
             } else if failed {
                 ZStack {
                     Theme.surfaceHi
-                    Image(systemName: "wifi.slash").foregroundStyle(Theme.textFaint)
+                    Image(systemName: "photo.badge.exclamationmark")
+                        .foregroundStyle(Theme.textFaint)
                 }
+                .accessibilityLabel("Immagine non disponibile")
             } else {
                 ZStack {
                     Theme.surfaceHi
@@ -32,16 +34,67 @@ struct AnimatedImageView: View {
     private func load() async {
         image = nil
         failed = false
-        do {
-            let (data, _) = try await URLSession.shared.data(from: url)
-            if let decoded = UIImage.animated(data: data) {
+
+        for attempt in 0..<2 {
+            do {
+                let data = try await RemoteMediaCache.shared.data(for: url)
+                try Task.checkCancellation()
+                guard let decoded = UIImage.animated(data: data) else {
+                    await RemoteMediaCache.shared.remove(url)
+                    failed = true
+                    return
+                }
                 image = decoded
-            } else {
-                failed = true
+                return
+            } catch is CancellationError {
+                // Le celle della griglia vengono riusate durante lo scroll: una
+                // cancellazione non significa che il telefono sia offline.
+                return
+            } catch {
+                if attempt == 0 {
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                } else {
+                    failed = true
+                }
             }
-        } catch {
-            failed = true
         }
+    }
+}
+
+private actor RemoteMediaCache {
+    static let shared = RemoteMediaCache()
+
+    private var dataByURL: [URL: Data] = [:]
+    private var insertionOrder: [URL] = []
+    private let maximumItems = 64
+
+    func data(for url: URL) async throws -> Data {
+        if let cached = dataByURL[url] { return cached }
+
+        var request = URLRequest(url: url)
+        request.cachePolicy = .returnCacheDataElseLoad
+        request.timeoutInterval = 20
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        if let http = response as? HTTPURLResponse,
+           !(200..<300).contains(http.statusCode) {
+            throw URLError(.badServerResponse)
+        }
+        guard !data.isEmpty else { throw URLError(.zeroByteResource) }
+
+        dataByURL[url] = data
+        insertionOrder.removeAll { $0 == url }
+        insertionOrder.append(url)
+        if insertionOrder.count > maximumItems {
+            let removed = insertionOrder.removeFirst()
+            dataByURL[removed] = nil
+        }
+        return data
+    }
+
+    func remove(_ url: URL) {
+        dataByURL[url] = nil
+        insertionOrder.removeAll { $0 == url }
     }
 }
 

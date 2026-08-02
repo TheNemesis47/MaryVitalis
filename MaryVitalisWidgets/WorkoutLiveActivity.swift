@@ -73,12 +73,15 @@ struct WorkoutLiveActivityWidget: Widget {
                 )) {
                     Text(set <= context.state.exercise.completedSets ? "✓" : "\(set)")
                         .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .frame(width: compact ? 34 : 42, height: compact ? 32 : 42)
+                        .frame(width: compact ? 36 : 44, height: compact ? 36 : 44)
                         .foregroundStyle(set <= context.state.exercise.completedSets ? Color.black : Color.white)
                         .background(set <= context.state.exercise.completedSets ? accent(context) : Color.white.opacity(0.12),
                                     in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(set <= context.state.exercise.completedSets
+                                    ? "Serie \(set), completata"
+                                    : "Segna serie \(set)")
             }
 
             Spacer(minLength: 2)
@@ -87,7 +90,7 @@ struct WorkoutLiveActivityWidget: Widget {
             Button(intent: SelectWorkoutRestIntent(activityID: context.activityID, seconds: nextRest)) {
                 Label("\(context.state.selectedRestSeconds)s", systemImage: "timer")
                     .font(.system(size: 12, weight: .bold).monospacedDigit())
-                    .frame(minWidth: compact ? 50 : 62, minHeight: compact ? 32 : 42)
+                    .frame(minWidth: compact ? 52 : 64, minHeight: compact ? 36 : 44)
                     .foregroundStyle(accent(context))
                     .background(accent(context).opacity(0.14), in: Capsule())
             }
@@ -105,21 +108,21 @@ struct WorkoutLiveActivityWidget: Widget {
             Button(intent: AdjustWorkoutRestIntent(activityID: context.activityID, delta: 15)) {
                 Text("+15")
                     .font(.caption.weight(.bold).monospacedDigit())
-                    .frame(width: compact ? 39 : 44, height: compact ? 32 : 42)
+                    .frame(width: compact ? 40 : 44, height: compact ? 36 : 44)
                     .background(Color.white.opacity(0.12), in: Capsule())
             }
             .buttonStyle(.plain)
 
             Button(intent: ToggleWorkoutRestIntent(activityID: context.activityID)) {
                 Image(systemName: context.state.pausedRestSeconds == nil ? "pause.fill" : "play.fill")
-                    .frame(width: compact ? 34 : 42, height: compact ? 32 : 42)
+                    .frame(width: compact ? 36 : 44, height: compact ? 36 : 44)
                     .background(Color.white.opacity(0.12), in: Circle())
             }
             .buttonStyle(.plain)
 
             Button(intent: SkipWorkoutRestIntent(activityID: context.activityID)) {
                 Image(systemName: "forward.end.fill")
-                    .frame(width: compact ? 34 : 42, height: compact ? 32 : 42)
+                    .frame(width: compact ? 36 : 44, height: compact ? 36 : 44)
                     .background(accent(context), in: Circle())
                     .foregroundStyle(Color.black)
             }
@@ -187,12 +190,15 @@ private struct WorkoutLockScreenView: View {
                 )) {
                     Text(set <= context.state.exercise.completedSets ? "✓" : "\(set)")
                         .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .frame(width: 42, height: 42)
+                        .frame(width: 44, height: 44)
                         .foregroundStyle(set <= context.state.exercise.completedSets ? Color.black : Color.white)
                         .background(set <= context.state.exercise.completedSets ? accent : Color.white.opacity(0.12),
                                     in: RoundedRectangle(cornerRadius: 11, style: .continuous))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(set <= context.state.exercise.completedSets
+                                    ? "Serie \(set), completata"
+                                    : "Segna serie \(set)")
             }
 
             Spacer(minLength: 2)
@@ -203,7 +209,7 @@ private struct WorkoutLockScreenView: View {
             )) {
                 Label("\(context.state.selectedRestSeconds)s", systemImage: "timer")
                     .font(.system(size: 13, weight: .bold).monospacedDigit())
-                    .frame(minWidth: 64, minHeight: 42)
+                    .frame(minWidth: 64, minHeight: 44)
                     .foregroundStyle(accent)
                     .background(accent.opacity(0.14), in: Capsule())
             }
@@ -222,21 +228,21 @@ private struct WorkoutLockScreenView: View {
             Button(intent: AdjustWorkoutRestIntent(activityID: context.activityID, delta: 15)) {
                 Text("+15")
                     .font(.caption.weight(.bold).monospacedDigit())
-                    .frame(width: 44, height: 42)
+                    .frame(width: 44, height: 44)
                     .background(Color.white.opacity(0.12), in: Capsule())
             }
             .buttonStyle(.plain)
 
             Button(intent: ToggleWorkoutRestIntent(activityID: context.activityID)) {
                 Image(systemName: context.state.pausedRestSeconds == nil ? "pause.fill" : "play.fill")
-                    .frame(width: 42, height: 42)
+                    .frame(width: 44, height: 44)
                     .background(Color.white.opacity(0.12), in: Circle())
             }
             .buttonStyle(.plain)
 
             Button(intent: SkipWorkoutRestIntent(activityID: context.activityID)) {
                 Image(systemName: "forward.end.fill")
-                    .frame(width: 42, height: 42)
+                    .frame(width: 44, height: 44)
                     .background(accent, in: Circle())
                     .foregroundStyle(Color.black)
             }

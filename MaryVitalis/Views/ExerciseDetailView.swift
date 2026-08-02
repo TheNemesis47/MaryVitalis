@@ -216,19 +216,10 @@ struct RemoteImage: View {
     var animated = false
 
     var body: some View {
-        if animated, let url {
+        if let url {
             AnimatedImageView(url: url)
         } else {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    image.resizable().scaledToFit()
-                case .failure:
-                    placeholder(symbol: "wifi.slash")
-                default:
-                    placeholder(symbol: nil)
-                }
-            }
+            placeholder(symbol: "photo")
         }
     }
 

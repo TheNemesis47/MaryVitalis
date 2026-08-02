@@ -10,6 +10,8 @@
 		B20000000000000000000010 /* WidgetShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000004 /* WidgetShared.swift */; };
 		B20000000000000000000011 /* WidgetShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000004 /* WidgetShared.swift */; };
 		B20000000000000000000012 /* MaryVitalisWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B20000000000000000000002 /* MaryVitalisWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		B20000000000000000000013 /* WorkoutIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000005 /* WorkoutIntents.swift */; };
+		B20000000000000000000014 /* WorkoutIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000005 /* WorkoutIntents.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -40,6 +42,7 @@
 		A1000000000000000000001 /* MaryVitalis.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MaryVitalis.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B20000000000000000000002 /* MaryVitalisWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = MaryVitalisWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		B20000000000000000000004 /* WidgetShared.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetShared.swift; sourceTree = "<group>"; };
+		B20000000000000000000005 /* WorkoutIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutIntents.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -139,6 +142,7 @@
 			isa = PBXGroup;
 			children = (
 				B20000000000000000000004 /* WidgetShared.swift */,
+				B20000000000000000000005 /* WorkoutIntents.swift */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -260,6 +264,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				B20000000000000000000010 /* WidgetShared.swift in Sources */,
+				B20000000000000000000013 /* WorkoutIntents.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -268,6 +273,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				B20000000000000000000011 /* WidgetShared.swift in Sources */,
+				B20000000000000000000014 /* WorkoutIntents.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -398,11 +404,12 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = MaryVitalis/MaryVitalis.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_ASSET_PATHS = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Mary Vitalis";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -431,11 +438,12 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = MaryVitalis/MaryVitalis.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_ASSET_PATHS = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Mary Vitalis";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -463,7 +471,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = MaryVitalisWidgets/MaryVitalisWidgets.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MaryVitalisWidgets/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -489,7 +497,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = MaryVitalisWidgets/MaryVitalisWidgets.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MaryVitalisWidgets/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;

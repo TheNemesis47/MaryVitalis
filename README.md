@@ -22,12 +22,13 @@ per `MaryVitalisWidgets`. I bundle id sono `it.maryvitalis.app` e
 
 | Schermata | Contenuto |
 | --- | --- |
+| **Accesso** | sessione locale una tantum con ruoli utente, trainer e admin |
 | **Home** | statistiche, schede in evidenza, distretti muscolari |
 | **Esercizi** | i 1324 esercizi del dataset, filtrabili per distretto/muscolo/attrezzo, con GIF animata e istruzioni passo passo |
 | **Schede** | le 3 schede (Samuel, Raffaele, Maria Pia) e la **modalità allenamento** |
 | **Mappa** | sedi selezionabili, zone della sala e 53 attrezzi interattivi |
 | **Recap** | settimana, calendario, andamento dello sforzo, storico |
-| **Impostazioni** | utente attivo e recupero predefinito |
+| **Impostazioni** | account, profilo consultato e recupero personalizzato |
 
 ### Modalità allenamento
 
@@ -49,6 +50,15 @@ Identica alla versione web:
 Progressi e storico restano sul dispositivo. Lo stato necessario a widget e
 Live Activity è condiviso tra app ed estensione tramite App Group.
 
+### Account, ruoli e recap
+
+La build TestFlight usa per ora un accesso locale: l'identificativo della
+sessione viene conservato nel Portachiavi di iOS, mentre non esistono password
+locali. Samuel e Raffaele sono utenti normali; Maria Pia è trainer di Samuel e
+Raffaele e può consultare i loro profili; il ruolo admin può consultare tutti.
+Schede, preferenza di recupero, widget e recap seguono il profilo consultato.
+Un login reale multi-dispositivo richiederà un backend e token server-side.
+
 ### Widget e utente attivo
 
 Il widget “Ultimo allenamento” mostra da quanti giorni l'utente selezionato non
@@ -58,8 +68,9 @@ impostazioni aperte con l'icona ingranaggio nella Home.
 
 Durante una scheda l'app avvia automaticamente una Live Activity in stile
 tracking: mostra esercizio e serie correnti, permette di segnare una serie e di
-scegliere, allungare, mettere in pausa o saltare il recupero senza sbloccare
-l'iPhone.
+scegliere, allungare, mettere in pausa o saltare il recupero. Per ragioni di
+sicurezza iOS richiede l'autenticazione quando il telefono è bloccato; dopo
+Face ID o codice l'azione viene eseguita senza dover aprire manualmente l'app.
 
 ### Mappa multi-palestra
 
@@ -76,9 +87,10 @@ mostra nome e gruppo principale; il tap apre tutti i dettagli e l'esecuzione.
 Ogni attrezzo apre una scheda che raggruppa nome, categoria, gruppi muscolari,
 esercizi compatibili, istruzioni e avvertenze.
 
-**Durante l'allenamento** la mappa evidenzia “ORA” e “POI” per guidare verso
-l'attrezzo corrente e quello successivo. Si apre dalla toolbar della scheda o
-dal link “Dove si fa” nella checklist.
+**Durante l'allenamento** la mappa evidenzia “ORA” in azzurro, “POI” in arancio
+e “FATTO” in grigio. Dal link “Dove si fa” scorre direttamente alla riga
+dell'attrezzo; il pannello conserva anche un pulsante esplicito per tornare alla
+scheda.
 
 Le immagini reali usate durante il rilievo non sono mostrate e sono escluse dal
 bundle dell'app. I macchinari ancora dubbi espongono un avviso testuale e possono
@@ -96,6 +108,7 @@ MaryVitalis/
   MaryVitalisApp.swift
   Model/
     Exercise.swift          voce del database
+    AppAccount.swift        account locali, ruoli e assegnazioni trainer
     Routine.swift           schede, giorni, parsing di "4 serie x 12"
     RoutineData.swift       le 3 schede
     GymLocation.swift       catalogo sedi, zone e selezione palestra
@@ -105,6 +118,7 @@ MaryVitalis/
   Store/
     ExerciseLibrary.swift   carica exercises.json fuori dal main thread
     ProfileStore.swift      utente selezionato condiviso con i widget
+    SecureSessionStore.swift sessione locale nel Portachiavi iOS
     WorkoutStore.swift      progressi e storico persistiti
     SessionController.swift cronometro, recupero, acqua e Live Activity
     WorkoutActivityManager.swift  ciclo di vita ActivityKit
@@ -120,9 +134,9 @@ MaryVitalis/
 MaryVitalisWidgets/
   WorkoutStreakWidget.swift widget ultimo allenamento
   WorkoutLiveActivity.swift Lock Screen e Dynamic Island
-  WorkoutIntents.swift      azioni interattive della Live Activity
 Shared/
   WidgetShared.swift        stato condiviso app/estensione
+  WorkoutIntents.swift      azioni Live Activity compilate in entrambi i target
 ```
 
 ## Dati
