@@ -508,9 +508,8 @@ struct GymEditorView: View {
                     .stroke(Theme.borderHi, lineWidth: 1))
         } else if let item {
             VStack(spacing: 5) {
-                Image(systemName: item.displaySymbol)
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(item.machineCategory.color)
+                EquipmentIconView(icon: item.icon, tint: item.machineCategory.color)
+                    .frame(height: 28)
                 Text(item.name)
                     .font(.system(size: 10.5, weight: .semibold))
                     .foregroundStyle(Theme.text)
@@ -716,9 +715,8 @@ struct EquipmentPickerSheet: View {
                                 dismiss()
                             } label: {
                                 HStack(spacing: 12) {
-                                    Image(systemName: item.displaySymbol)
-                                        .font(.system(size: 16, weight: .semibold))
-                                        .foregroundStyle(item.machineCategory.color)
+                                    EquipmentIconView(icon: item.icon,
+                                                      tint: item.machineCategory.color)
                                         .frame(width: 36, height: 36)
                                         .background(item.machineCategory.color.opacity(0.12), in: Circle())
                                     VStack(alignment: .leading, spacing: 2) {
@@ -745,9 +743,8 @@ struct EquipmentPickerSheet: View {
                             dismiss()
                         } label: {
                             HStack(spacing: 12) {
-                                Image(systemName: machine.category.symbol)
-                                    .font(.system(size: 16, weight: .semibold))
-                                    .foregroundStyle(machine.category.color)
+                                EquipmentIconView(icon: machine.icon,
+                                                  tint: machine.category.color)
                                     .frame(width: 36, height: 36)
                                     .background(machine.category.color.opacity(0.12), in: Circle())
                                 VStack(alignment: .leading, spacing: 2) {
@@ -841,11 +838,15 @@ struct EquipmentEditorSheet: View {
                     IconPicker(selection: Binding(
                         get: { equipment.symbolName },
                         set: { equipment.symbolName = $0 }),
-                        tint: equipment.machineCategory.color)
+                        tint: equipment.machineCategory.color,
+                        suggestion: EquipmentIcon.guessed(
+                            id: equipment.catalogItemID ?? "",
+                            name: equipment.name,
+                            muscles: equipment.muscles))
                 } header: {
                     Text("Icona")
                 } footer: {
-                    Text("Gli attrezzi del catalogo hanno una sagoma vista dall'alto. Per i tuoi, scegli un'icona: sulla mappa comparirà quella.")
+                    Text("L'icona la sceglie l'app dal nome dell'attrezzo. Se sbaglia, o se il tuo attrezzo è particolare, scegline una tu: comparirà anche sulla mappa.")
                 }
 
                 Section("Muscoli allenati") {
@@ -910,49 +911,55 @@ struct EquipmentEditorSheet: View {
     }
 }
 
-/// Scelta dell'icona per un attrezzo fuori catalogo.
+/// Scelta dell'icona dell'attrezzo.
 struct IconPicker: View {
     @Binding var selection: String?
     var tint: Color = Theme.defaultAccent
+    /// Serve solo a dire quale sarebbe l'icona automatica.
+    var suggestion: EquipmentIcon = .unknown
 
-    private let columns = [GridItem(.adaptive(minimum: 46), spacing: 8)]
+    private let columns = [GridItem(.adaptive(minimum: 58), spacing: 8)]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             Button {
                 selection = nil
                 Feedback.tap()
             } label: {
-                Label(selection == nil ? "Icona predefinita (in uso)" : "Usa quella predefinita",
-                      systemImage: selection == nil ? "checkmark.circle.fill" : "arrow.uturn.backward")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(selection == nil ? tint : Theme.textDim)
+                HStack(spacing: 10) {
+                    EquipmentIconView(icon: suggestion, tint: selection == nil ? tint : Theme.textFaint)
+                        .frame(width: 34, height: 34)
+                    Text(selection == nil ? "Automatica (in uso)" : "Torna a quella automatica")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(selection == nil ? tint : Theme.textDim)
+                    Spacer(minLength: 0)
+                }
             }
             .buttonStyle(.plain)
 
-            ForEach(GymSymbols.groups) { group in
+            ForEach(EquipmentIcon.groups, id: \.0) { group in
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(group.title.uppercased())
+                    Text(group.0.uppercased())
                         .font(.system(size: 10, weight: .bold))
                         .tracking(0.8)
                         .foregroundStyle(Theme.textFaint)
 
                     LazyVGrid(columns: columns, spacing: 8) {
-                        ForEach(group.symbols, id: \.self) { symbol in
+                        ForEach(group.1) { icon in
+                            let chosen = selection == icon.rawValue
                             Button {
-                                selection = symbol
+                                selection = icon.rawValue
                                 Feedback.tap()
                             } label: {
-                                Image(systemName: symbol)
-                                    .font(.system(size: 18, weight: .semibold))
-                                    .foregroundStyle(selection == symbol ? Color(hex: "#0a0f1a") : tint)
-                                    .frame(width: 44, height: 44)
-                                    .background(selection == symbol ? tint : Theme.surfaceHi,
-                                                in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                                EquipmentIconView(icon: icon,
+                                                  tint: chosen ? Color(hex: "#0a0f1a") : tint)
+                                    .frame(width: 52, height: 52)
+                                    .background(chosen ? tint : Theme.surfaceHi,
+                                                in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                             }
                             .buttonStyle(.plain)
-                            .accessibilityLabel(symbol)
-                            .accessibilityAddTraits(selection == symbol ? .isSelected : [])
+                            .accessibilityLabel(icon.title)
+                            .accessibilityAddTraits(chosen ? .isSelected : [])
                         }
                     }
                 }

@@ -500,7 +500,7 @@ struct GymMapView: View {
                 ZStack(alignment: .topTrailing) {
                     EquipmentPlanSymbol(machine: machine, tint: iconTint)
                         .frame(width: 50, height: 50)
-                        .rotationEffect(symbolRotation(for: machine, column: column))
+
                         .shadow(color: Color.black.opacity(0.24), radius: 2, y: 2)
 
                     if isHighlighted {
@@ -635,13 +635,6 @@ struct GymMapView: View {
                 .replacingOccurrences(of: "Adjustable pulley", with: "Pulley")
                 .replacingOccurrences(of: "Cardio salire scale", with: "Stair climber")
         }
-    }
-
-    private func symbolRotation(for machine: GymMachine, column: Int) -> Angle {
-        if machine.id == "colonna-multi-4" || machine.id == "colonna-multi-2" || machine.id == "manubri" {
-            return .zero
-        }
-        return .degrees(column < 2 ? 90 : -90)
     }
 
     private func accessibilityLabel(for machine: GymMachine, zone: GymZoneFrame?) -> String {

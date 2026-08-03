@@ -494,27 +494,33 @@ func run() async throws {
           conPassaggi.orderedEquipment.contains(where: \.isWalkway))
 
     print("\n[riuso e icone]")
-    let tapis = GymEquipment(name: "Tapis roulant", category: .cardio,
+    let tapis = GymEquipment(name: "Postazione strana", category: .cardio,
                              gridRow: 3, gridColumn: 0,
-                             symbolName: "figure.run")
+                             symbolName: EquipmentIcon.rower.rawValue)
     tapis.gym = sede
     try context.save()
-    check("l'icona scelta vince su quella della categoria",
-          tapis.displaySymbol == "figure.run")
-    let senzaIcona = GymEquipment(name: "Anonimo", category: .forza,
-                                  gridRow: 3, gridColumn: 1)
-    check("senza scelta resta quella della categoria",
-          senzaIcona.displaySymbol == GymMachine.Category.forza.symbol)
+    check("l'icona scelta vince su quella indovinata", tapis.icon == .rower)
+    // Senza scelta la si deduce dal nome: è quello che salva i cinquanta
+    // attrezzi del catalogo, per cui nessuno ha mai scelto niente.
+    let dedotto = GymEquipment(name: "Tapis roulant 3", category: .cardio,
+                               gridRow: 3, gridColumn: 1)
+    check("senza scelta la indovina dal nome", dedotto.icon == .treadmill)
+    let senzaIcona = GymEquipment(name: "Coso non identificato", category: .forza,
+                                  gridRow: 3, gridColumn: 4)
+    check("quando non capisce lo dice", senzaIcona.icon == .unknown)
+    check("indovina anche dai muscoli",
+          EquipmentIcon.guessed(name: "Macchina blu", muscles: ["Pettorali"]) == .chestPress)
     // Dieci tapis sono un attrezzo da riusare, non dieci voci in elenco.
     let tapisDue = GymEquipment(name: "Tapis roulant 2", category: .cardio,
                                 gridRow: 3, gridColumn: 2)
     check("due esemplari sono lo stesso attrezzo",
-          tapis.reuseKey == tapisDue.reuseKey)
+          dedotto.reuseKey == tapisDue.reuseKey)
     check("attrezzi diversi restano diversi",
-          tapis.reuseKey != senzaIcona.reuseKey)
+          dedotto.reuseKey != senzaIcona.reuseKey)
     check("l'icona arriva fino alla mappa",
-          sede.asLocation.machines.first { $0.name == "Tapis roulant" }?.symbolName == "figure.run")
+          sede.asLocation.machines.first { $0.name == "Postazione strana" }?.icon == .rower)
     context.delete(tapis)
+    context.delete(dedotto)
     context.delete(senzaIcona)
     try context.save()
 

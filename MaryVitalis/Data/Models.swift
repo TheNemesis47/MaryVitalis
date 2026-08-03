@@ -489,8 +489,8 @@ final class GymEquipment {
     var tips: [String] = []
     /// `true` quando nemmeno il rilievo sapeva dire di che attrezzo si tratta.
     var uncertain: Bool = false
-    /// L'icona scelta a mano, quando l'attrezzo non è nel catalogo e quindi non
-    /// ha una sagoma disegnata. Vuota: si usa quella della categoria.
+    /// L'icona scelta a mano: il nome di un `EquipmentIcon`. Vuota, l'icona si
+    /// deduce dal nome e dai muscoli — che per gli attrezzi del catalogo basta.
     var symbolName: String?
     /// Cosa c'è in questa cella. Una sala non è fatta solo di macchine: i
     /// passaggi sono quello che la rende leggibile, e prima esisteva un solo
@@ -539,8 +539,11 @@ final class GymEquipment {
 
     var isWalkway: Bool { cellKind == .walkway }
 
-    /// L'icona da mostrare: quella scelta, o quella della categoria.
-    var displaySymbol: String { symbolName ?? machineCategory.symbol }
+    /// L'icona da disegnare: quella scelta, o quella indovinata.
+    var icon: EquipmentIcon {
+        symbolName.flatMap(EquipmentIcon.init(rawValue:))
+            ?? .guessed(id: catalogItemID ?? "", name: name, muscles: muscles)
+    }
 
     /// Due postazioni sono "lo stesso attrezzo" quando vengono dalla stessa
     /// voce di catalogo, o quando hanno lo stesso nome a meno del numero

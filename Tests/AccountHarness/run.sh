@@ -26,7 +26,7 @@ swiftc -parse-as-library \
   "$P/Data/GymBirreria.swift" "$P/Data/HistoricRoutines.swift" \
   "$P/Model/GymMachine.swift" \
   "$P/Model/UserRole.swift" \
-  "$P/Model/Routine.swift" "$P/Model/GymLocation.swift" "$P/Model/GymMapData.swift" \
+  "$P/Model/Routine.swift" "$P/Model/GymLocation.swift" "$P/Model/EquipmentIcon.swift" "$P/Model/GymMapData.swift" \
   "$P/Store/CredentialStore.swift" \
   "$P/Store/SecureSessionStore.swift" \
   "$P/Store/AppleSignIn.swift" \
