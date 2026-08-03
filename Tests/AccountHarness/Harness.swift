@@ -554,6 +554,50 @@ func run() async throws {
     check("le voci di catalogo sono note",
           !profile.availableCatalogIDs.isEmpty)
 
+    print("\n[cosa posso fare con quello che ho]")
+    // Il perno è la famiglia di attrezzo, non l'identificativo del rilievo:
+    // è l'unica cosa che vale anche per una palestra mappata da zero.
+    check("il corpo libero non chiede niente",
+          EquipmentIcon.required(forExerciseNamed: "push up", equipment: "body weight").isEmpty)
+    check("il bilanciere chiede la sua famiglia",
+          EquipmentIcon.required(forExerciseNamed: "barbell squat", equipment: "barbell")
+            .contains(.plateRack))
+    check("il nome dell'esercizio è più preciso dell'attrezzo dichiarato",
+          EquipmentIcon.required(forExerciseNamed: "lever seated row",
+                                 equipment: "leverage machine").contains(.seatedRow))
+    check("il tapis chiede il tapis",
+          EquipmentIcon.required(forExerciseNamed: "walking on treadmill",
+                                 equipment: "treadmill") == [.treadmill])
+
+    // Una sala inventata da zero, senza nessun collegamento al rilievo.
+    // Un profilo pulito: Bea ha già ricevuto sedi copiate, e una sala piena di
+    // attrezzi non prova niente sul filtro.
+    let novellino = try profile.register(displayName: "Novellino", email: nil,
+                                         password: "unapassword")
+    let miaSala = GymFactory.insertEmpty(named: "Sala mia", owner: novellino, into: context)
+    let mioTapis = GymEquipment(name: "Il mio tapis", category: .cardio,
+                                gridRow: 0, gridColumn: 0,
+                                symbolName: EquipmentIcon.treadmill.rawValue)
+    mioTapis.gym = miaSala
+    context.insert(mioTapis)
+    try context.save()
+    profile.signIn(account: novellino)
+
+    let filtro = profile.availabilityFilter()
+    func esercizio(_ id: String, _ name: String, _ equipment: String) -> Exercise {
+        Exercise(id: id, name: name, bodyPart: "chest", target: "pectorals",
+                 equipment: equipment, muscleGroup: nil, secondaryMuscles: [],
+                 image: nil, gif: nil, instructionsIt: nil, instructionsEn: nil,
+                 stepsIt: nil, stepsEn: nil)
+    }
+    let corsa = esercizio("1", "walking on treadmill", "treadmill")
+    let panca = esercizio("2", "barbell bench press", "barbell")
+    let flessioni = esercizio("3", "push up", "body weight")
+    check("un attrezzo inventato basta a sbloccare i suoi esercizi", filtro(corsa))
+    check("quello che non ho resta fuori", !filtro(panca))
+    check("il corpo libero passa sempre", filtro(flessioni))
+    profile.signIn(account: anna)
+
     print("\n[cancellazione della sede]")
     let daButtare = GymFactory.insertEmpty(named: "Sede di passaggio", owner: anna, into: context)
     try context.save()

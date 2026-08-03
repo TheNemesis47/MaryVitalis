@@ -39,14 +39,26 @@ final class CloudSync: ObservableObject {
 
     // MARK: - Ciclo di vita
 
+    /// Ogni quanto ha senso rileggere tutto. Sotto questa soglia si riparte
+    /// solo con gli ascoltatori, che intanto non hanno smesso di guardare:
+    /// uscire e rientrare dall'app tre volte di fila non deve costare tre
+    /// riletture dell'intero archivio.
+    private static let resyncInterval: TimeInterval = 90
+
     /// Da chiamare dopo l'accesso: allinea il profilo, poi resta in ascolto.
     func start(for account: UserAccount) async {
         guard FirebaseService.isConfigured, let uid = account.firebaseUID else { return }
+
+        if let lastSync, Date().timeIntervalSince(lastSync) < Self.resyncInterval,
+           !listeners.isEmpty {
+            return
+        }
         stop()
         await pushProfile(account)
         await pullEverything(uid: uid)
         await flushPendingUploads()
         observe(uid: uid)
+        lastSync = Date()
     }
 
     func stop() {
@@ -276,9 +288,20 @@ final class CloudSync: ObservableObject {
         payload.insert(owner: account, into: context, preservingID: true)
     }
 
+    /// Quanti allenamenti si rileggono dal cloud a ogni allineamento.
+    ///
+    /// Erano **tutti**, a ogni avvio e a ogni ritorno in primo piano: chi si
+    /// allena da due anni sono trecento documenti letti ogni volta che apre
+    /// l'app, moltiplicati per quanti la usano — e le letture si pagano. Lo
+    /// storico vecchio resta sul telefono, dove è già stato scritto una volta.
+    private static let sessionsPageSize = 200
+
     private func pullSessions(ownerUID: String, account: UserAccount) async {
         guard let documents = try? await FirebaseService.db.collection(FirestorePath.sessions)
-            .whereField("ownerId", isEqualTo: ownerUID).getDocuments() else { return }
+            .whereField("ownerId", isEqualTo: ownerUID)
+            .order(by: "dateKey", descending: true)
+            .limit(to: Self.sessionsPageSize)
+            .getDocuments() else { return }
 
         for document in documents.documents {
             applySession(document.data(), ownerAccountID: account.id)

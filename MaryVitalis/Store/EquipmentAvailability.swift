@@ -62,27 +62,27 @@ extension ProfileStore {
 
     /// Un filtro costruito **una volta** e riusato per tutti gli esercizi.
     ///
-    /// Chiamare `canPerform` in un ciclo su milletrecento voci significava
+    /// Chiamarlo per ogni voce di un elenco da milletrecento significherebbe
     /// ricalcolare a ogni giro gli insiemi degli attrezzi disponibili, che si
-    /// leggono scorrendo tutte le postazioni di tutte le sedi: un lavoro
-    /// quadratico su un elenco che cresce con l'uso. Qui gli insiemi si
-    /// costruiscono una volta e restano nella chiusura.
+    /// leggono scorrendo tutte le postazioni di tutte le sedi: lavoro
+    /// quadratico su un elenco che cresce con l'uso.
     func availabilityFilter() -> (Exercise) -> Bool {
         let catalogIDs = availableCatalogIDs
         let icons = availableIcons
 
         return { exercise in
-            let equipment = (exercise.equipment ?? "").lowercased()
-            // Tre strade, dalla più precisa alla più larga: la macchina esatta,
-            // la famiglia di attrezzo, e il corpo libero — che non chiede
-            // niente a nessuno.
-            if equipment.contains("body weight") || equipment.contains("corpo libero") {
-                return true
-            }
-            if GymMap.machines(for: exercise.name).contains(where: { catalogIDs.contains($0.id) }) {
-                return true
-            }
-            return Self.iconFamilies(for: equipment).contains(where: icons.contains)
+            // La famiglia di attrezzo è la strada che vale per tutti: un
+            // attrezzo inventato da chi mappa la sua palestra ha un'icona, e
+            // quella è la sua famiglia.
+            let required = EquipmentIcon.required(forExerciseNamed: exercise.name,
+                                                  equipment: exercise.equipment)
+            if required.isEmpty { return true }
+            if !required.isDisjoint(with: icons) { return true }
+
+            // Scorciatoia esatta per chi ha importato una sede già mappata:
+            // lì la macchina precisa si conosce per nome.
+            return GymMap.machines(for: exercise.name)
+                .contains { catalogIDs.contains($0.id) }
         }
     }
 
@@ -91,29 +91,4 @@ extension ProfileStore {
         availabilityFilter()(exercise)
     }
 
-    /// Da come il database chiama l'attrezzo alle icone che lo rappresentano.
-    private static func iconFamilies(for equipment: String) -> Set<EquipmentIcon> {
-        switch true {
-        case equipment.contains("dumbbell"): [.dumbbellRack, .bench, .benchRack]
-        case equipment.contains("kettlebell"): [.kettlebell, .dumbbellRack]
-        case equipment.contains("barbell"), equipment.contains("ez barbell"):
-            [.plateRack, .benchRack, .smithMachine]
-        case equipment.contains("smith"): [.smithMachine]
-        case equipment.contains("cable"): [.cableColumn]
-        case equipment.contains("leverage"), equipment.contains("sled"):
-            [.chestPress, .shoulderPress, .legPress, .hackSquat, .latPulldown,
-             .seatedRow, .pecFly, .lateralRaise, .legExtension, .legCurl,
-             .abductor, .glute, .abCrunch, .calf, .pullover]
-        case equipment.contains("assisted"): [.dipAssist]
-        case equipment.contains("stationary bike"): [.bike]
-        case equipment.contains("elliptical"): [.elliptical]
-        case equipment.contains("treadmill"): [.treadmill]
-        case equipment.contains("stepmill"), equipment.contains("stair"): [.stepper]
-        case equipment.contains("rope"), equipment.contains("band"),
-             equipment.contains("ball"), equipment.contains("roller"),
-             equipment.contains("bosu"), equipment.contains("wheel"):
-            [.mat, .stretchArea]
-        default: []
-        }
-    }
 }

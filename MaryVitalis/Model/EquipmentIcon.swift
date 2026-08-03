@@ -76,6 +76,56 @@ enum EquipmentIcon: String, CaseIterable, Identifiable {
         ("Spazi", [.platform, .mat, .stretchArea, .unknown])
     ]
 
+    /// Di che famiglia di attrezzo ha bisogno un esercizio.
+    ///
+    /// È il perno che rende il filtro valido fuori da una palestra sola. Prima
+    /// si passava dagli identificativi del rilievo di FitActive — `tapis-1`,
+    /// `leg-press` — che sono le macchine *di quella sala*: chi mappa la
+    /// propria palestra con attrezzi suoi non aggancia niente, e il filtro non
+    /// gli dice niente. Una famiglia invece ce l'hanno tutti, perché è quella
+    /// che l'utente sceglie come icona quando crea un attrezzo.
+    ///
+    /// Un insieme vuoto vuol dire "non serve niente di particolare" — il corpo
+    /// libero — oppure "non lo sappiamo": in entrambi i casi l'esercizio si
+    /// mostra, perché nascondere per un dubbio è peggio che mostrare di più.
+    static func required(forExerciseNamed name: String, equipment: String?) -> Set<EquipmentIcon> {
+        let tool = (equipment ?? "").lowercased()
+        if tool.contains("body weight") || tool.contains("corpo libero") { return [] }
+
+        var families = fromEquipmentName(tool)
+
+        // Il nome dell'esercizio è spesso più preciso dell'attrezzo dichiarato:
+        // "lever seated row" dice quale macchina serve, "leverage machine" no.
+        let fromName = guessed(name: name)
+        if fromName != .unknown { families.insert(fromName) }
+        return families
+    }
+
+    /// Da come il database chiama l'attrezzo alle famiglie che lo rappresentano.
+    private static func fromEquipmentName(_ tool: String) -> Set<EquipmentIcon> {
+        switch true {
+        case tool.contains("dumbbell"): [.dumbbellRack, .bench, .benchRack]
+        case tool.contains("kettlebell"): [.kettlebell, .dumbbellRack]
+        case tool.contains("barbell"): [.plateRack, .benchRack, .smithMachine]
+        case tool.contains("smith"): [.smithMachine]
+        case tool.contains("cable"): [.cableColumn]
+        case tool.contains("leverage"), tool.contains("sled"):
+            [.chestPress, .shoulderPress, .legPress, .hackSquat, .latPulldown,
+             .seatedRow, .pecFly, .lateralRaise, .legExtension, .legCurl,
+             .abductor, .glute, .abCrunch, .calf, .pullover, .dipAssist]
+        case tool.contains("assisted"): [.dipAssist]
+        case tool.contains("stationary bike"): [.bike]
+        case tool.contains("elliptical"): [.elliptical]
+        case tool.contains("treadmill"): [.treadmill]
+        case tool.contains("stepmill"), tool.contains("stair"): [.stepper]
+        case tool.contains("rope"), tool.contains("band"), tool.contains("ball"),
+             tool.contains("roller"), tool.contains("bosu"), tool.contains("wheel"),
+             tool.contains("weighted"), tool.contains("medicine"):
+            [.mat, .stretchArea, .dumbbellRack]
+        default: []
+        }
+    }
+
     /// Indovina l'icona da quello che si sa dell'attrezzo. Serve al catalogo,
     /// che di icone non ne ha mai scelte, e come proposta a chi ne crea uno.
     static func guessed(id: String = "", name: String, muscles: [String] = []) -> EquipmentIcon {
