@@ -39,6 +39,11 @@ struct RoutineDetailView: View {
         return items.indices.first { $0 > current && doneCount(items[$0]) < items[$0].sets }
     }
 
+    /// Calcolata all'apertura della mappa e quando cambia una serie, non a
+    /// ogni disegno: il cronometro ridisegna questa schermata quattro volte al
+    /// secondo, e con lei tutto quello che le sta sopra — mappa compresa.
+    @State private var mapHighlight: MapHighlight?
+
     private var highlight: MapHighlight {
         MapHighlight(
             current: currentIndex.map { mapItem(at: $0) },
@@ -103,6 +108,7 @@ struct RoutineDetailView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     mapFocus = nil
+                    mapHighlight = highlight
                     showMap = true
                 } label: {
                     Image(systemName: "map.fill")
@@ -152,7 +158,7 @@ struct RoutineDetailView: View {
         }
         .sheet(isPresented: $showMap, onDismiss: { mapFocus = nil }) {
             NavigationStack {
-                GymMapView(highlight: session.isRunning ? highlight : nil,
+                GymMapView(highlight: session.isRunning ? mapHighlight : nil,
                            focus: mapFocus,
                            showsDismissButton: true)
             }
@@ -293,6 +299,7 @@ struct RoutineDetailView: View {
                             },
                             onOpenMap: {
                                 mapFocus = profile.machines(for: item.exerciseQuery).first
+                                mapHighlight = highlight
                                 showMap = true
                             }
                         )
@@ -360,6 +367,8 @@ struct RoutineDetailView: View {
         let increased = store.setDone(routineID: routine.id, dayID: day.id, item: item, count: count)
         Feedback.tap()
         session.updateWorkoutState(liveActivityState())
+        // Se la mappa è aperta, "ORA" deve spostarsi sulla postazione giusta.
+        if showMap { mapHighlight = highlight }
 
         // Serie appena completata: parte da sola la pausa di recupero.
         if increased, session.isRunning, !item.isCardio {

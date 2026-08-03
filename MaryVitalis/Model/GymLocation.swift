@@ -87,11 +87,16 @@ enum GymCatalog {
         let wanted = Set(GymMap.machines(for: query).map(\.id))
         guard !wanted.isEmpty else { return [] }
 
-        let matching = Set(gym.orderedEquipment
-            .filter { item in item.catalogItemID.map(wanted.contains) ?? false }
-            .map(\.id.uuidString))
-        guard !matching.isEmpty else { return [] }
-
-        return gym.asLocation.machines.filter { matching.contains($0.id) }
+        // Si convertono solo le postazioni che servono. Prima si costruiva
+        // l'intera sede — cinquanta attrezzi, con i loro dizionari — per poi
+        // buttarne via quarantotto, e succedeva una volta per esercizio.
+        return (gym.equipment ?? [])
+            .filter { item in
+                !item.isWalkway && (item.catalogItemID.map(wanted.contains) ?? false)
+            }
+            .sorted {
+                $0.gridRow == $1.gridRow ? $0.gridColumn < $1.gridColumn : $0.gridRow < $1.gridRow
+            }
+            .map(\.asMachine)
     }
 }

@@ -32,6 +32,26 @@ enum GymFactory {
     }
 }
 
+extension GymEquipment {
+    /// La singola postazione nel formato che la mappa disegna. Le coordinate
+    /// sono fabbricate dalla griglia, come in `Gym.asLocation`.
+    var asMachine: GymMachine {
+        GymMachine(
+            id: id.uuidString,
+            name: name,
+            subtitle: subtitle,
+            category: machineCategory,
+            rect: CGRect(x: CGFloat(gridColumn) * 100, y: CGFloat(gridRow) * 100,
+                         width: 90, height: 90),
+            muscles: muscles,
+            howTo: howTo,
+            tips: tips,
+            uncertain: uncertain,
+            symbolName: symbolName
+        )
+    }
+}
+
 extension Gym {
     /// Traduce la palestra nel formato che la mappa disegna.
     ///
@@ -41,27 +61,11 @@ extension Gym {
     /// del progetto.
     var asLocation: GymLocation {
         let step: CGFloat = 100
-        let size: CGFloat = 90
 
         // Un solo riordinamento, non tre: `orderedEquipment` ordina a ogni
         // chiamata, e qui serviva per attrezzi, posizioni e passaggi.
         let items = orderedEquipment
-        let machines = items.filter { !$0.isWalkway }.map { item in
-            GymMachine(
-                id: item.id.uuidString,
-                name: item.name,
-                subtitle: item.subtitle,
-                category: item.machineCategory,
-                rect: CGRect(x: CGFloat(item.gridColumn) * step,
-                             y: CGFloat(item.gridRow) * step,
-                             width: size, height: size),
-                muscles: item.muscles,
-                howTo: item.howTo,
-                tips: item.tips,
-                uncertain: item.uncertain,
-                symbolName: item.symbolName
-            )
-        }
+        let machines = items.filter { !$0.isWalkway }.map(\.asMachine)
 
         let frames = (zones ?? []).map { zone in
             GymZoneFrame(

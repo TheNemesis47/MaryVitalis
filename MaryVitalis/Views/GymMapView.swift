@@ -13,9 +13,22 @@ struct MapHighlight {
     let completed: [Item]
     let accent: Color
 
-    var currentIDs: Set<String> { Set(current?.machines.map(\.id) ?? []) }
-    var nextIDs: Set<String> { Set(next?.machines.map(\.id) ?? []) }
-    var completedIDs: Set<String> { Set(completed.flatMap { $0.machines.map(\.id) }) }
+    // Erano proprietà calcolate, e la pianta le interroga **una volta per
+    // postazione**: con cinquanta attrezzi facevano centocinquanta insiemi
+    // nuovi a ogni disegno. Si costruiscono una volta sola.
+    let currentIDs: Set<String>
+    let nextIDs: Set<String>
+    let completedIDs: Set<String>
+
+    init(current: Item?, next: Item?, completed: [Item], accent: Color) {
+        self.current = current
+        self.next = next
+        self.completed = completed
+        self.accent = accent
+        self.currentIDs = Set(current?.machines.map(\.id) ?? [])
+        self.nextIDs = Set(next?.machines.map(\.id) ?? [])
+        self.completedIDs = Set(completed.flatMap { $0.machines.map(\.id) })
+    }
 }
 
 /// La larghezza a disposizione della pianta, per decidere se le celle possono

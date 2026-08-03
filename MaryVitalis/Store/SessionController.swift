@@ -124,7 +124,11 @@ final class SessionController: ObservableObject {
 
     private func tick() {
         guard isRunning, let startedAt else { return }
-        elapsed = (Date().timeIntervalSince(startedAt)).rounded()
+        // Il ticker batte quattro volte al secondo per tenere fluido il
+        // recupero, ma i secondi trascorsi cambiano una volta al secondo:
+        // pubblicarli comunque ridisegnava tutta la schermata quattro volte.
+        let seconds = (Date().timeIntervalSince(startedAt)).rounded()
+        if seconds != elapsed { elapsed = seconds }
 
         if let current = rest, !current.isPaused, current.left <= 0 {
             rest = nil
