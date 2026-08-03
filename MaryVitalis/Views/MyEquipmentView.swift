@@ -26,7 +26,7 @@ struct MyEquipmentView: View {
 
     /// Quanti dei milletrecento esercizi si possono fare con quello che c'è.
     private var doableCount: Int {
-        library.all.filter(profile.canPerform).count
+        library.all.filter(profile.availabilityFilter()).count
     }
 
     var body: some View {

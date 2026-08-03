@@ -60,22 +60,35 @@ extension ProfileStore {
 
     var hasMappedEquipment: Bool { !myEquipment.isEmpty }
 
-    /// `true` se questo esercizio si può fare con quello che ha in sala.
+    /// Un filtro costruito **una volta** e riusato per tutti gli esercizi.
     ///
-    /// Tre strade, dalla più precisa alla più larga: la macchina esatta, la
-    /// famiglia di attrezzo, e il corpo libero — che non chiede niente a
-    /// nessuno.
-    func canPerform(_ exercise: Exercise) -> Bool {
-        let equipment = (exercise.equipment ?? "").lowercased()
-        if equipment.contains("body weight") || equipment.contains("corpo libero") {
-            return true
-        }
-
-        let needed = GymMap.machines(for: exercise.name).map(\.id)
-        if needed.contains(where: availableCatalogIDs.contains) { return true }
-
+    /// Chiamare `canPerform` in un ciclo su milletrecento voci significava
+    /// ricalcolare a ogni giro gli insiemi degli attrezzi disponibili, che si
+    /// leggono scorrendo tutte le postazioni di tutte le sedi: un lavoro
+    /// quadratico su un elenco che cresce con l'uso. Qui gli insiemi si
+    /// costruiscono una volta e restano nella chiusura.
+    func availabilityFilter() -> (Exercise) -> Bool {
+        let catalogIDs = availableCatalogIDs
         let icons = availableIcons
-        return Self.iconFamilies(for: equipment).contains(where: icons.contains)
+
+        return { exercise in
+            let equipment = (exercise.equipment ?? "").lowercased()
+            // Tre strade, dalla più precisa alla più larga: la macchina esatta,
+            // la famiglia di attrezzo, e il corpo libero — che non chiede
+            // niente a nessuno.
+            if equipment.contains("body weight") || equipment.contains("corpo libero") {
+                return true
+            }
+            if GymMap.machines(for: exercise.name).contains(where: { catalogIDs.contains($0.id) }) {
+                return true
+            }
+            return Self.iconFamilies(for: equipment).contains(where: icons.contains)
+        }
+    }
+
+    /// Per il caso singolo. Nei cicli si usa `availabilityFilter()`.
+    func canPerform(_ exercise: Exercise) -> Bool {
+        availabilityFilter()(exercise)
     }
 
     /// Da come il database chiama l'attrezzo alle icone che lo rappresentano.

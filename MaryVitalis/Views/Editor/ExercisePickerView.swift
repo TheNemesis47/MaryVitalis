@@ -24,7 +24,7 @@ struct ExercisePickerView: View {
         // scheda con un attrezzo che non si ha è il modo più veloce per farla
         // saltare al primo allenamento.
         guard onlyMine, profile.hasMappedEquipment else { return all }
-        return all.filter(profile.canPerform)
+        return all.filter(profile.availabilityFilter())
     }
 
     /// Il database ha 1324 voci: mostrarle tutte insieme non serve a nessuno e
