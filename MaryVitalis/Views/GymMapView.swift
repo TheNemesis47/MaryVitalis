@@ -69,9 +69,14 @@ struct GymMapView: View {
     /// Le sedi del profilo consultato, e nient'altro: la palestra di qualcun
     /// altro non è un buon segnaposto per chi non ne ha ancora mappata una.
     private var availableLocations: [GymLocation] {
-        (profile.viewedAccount?.gyms ?? [])
+        var seen: Set<String> = []
+        // Un elenco con due elementi dello stesso identificativo è un guaio per
+        // chi lo disegna, e una sincronizzazione andata storta può lasciarne
+        // due: qui si passa una volta sola.
+        return (profile.viewedAccount?.gyms ?? [])
             .sorted { $0.sortIndex < $1.sortIndex }
             .map(\.asLocation)
+            .filter { seen.insert($0.id).inserted }
     }
 
     private var hasGyms: Bool { !availableLocations.isEmpty }
@@ -111,7 +116,16 @@ struct GymMapView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
                 .padding(.bottom, 32)
+                // La larghezza della pagina: dipende dallo schermo, non da
+                // quello che ci si disegna dentro. È l'unico punto da cui si
+                // può misurare senza innescare un anello.
+                .background {
+                    GeometryReader { proxy in
+                        Color.clear.preference(key: PlanWidthKey.self, value: proxy.size.width)
+                    }
+                }
             }
+            .onPreferenceChange(PlanWidthKey.self) { planWidth = $0 }
             .scrollDismissesKeyboard(.interactively)
             .task(id: scrollTargetRowID) {
                 guard let rowID = scrollTargetRowID else { return }
@@ -271,6 +285,16 @@ struct GymMapView: View {
     /// La pianta sta in orizzontale quanto serve: con poche colonne riempie lo
     /// schermo, con tante le celle scendono alla larghezza minima e ci si
     /// sposta di lato invece di stringere tutto fino a non leggere più niente.
+    /// La pianta si dimensiona da sé: le celle hanno una larghezza fissa, la
+    /// riga è larga quanto le sue celle, e la ScrollView orizzontale scorre se
+    /// non ci stanno.
+    ///
+    /// La larghezza disponibile **non** si misura qui. Misurarla su questa
+    /// stessa vista, e poi usarla per decidere quanto è larga la pianta,
+    /// chiudeva un anello: la misura cambiava la larghezza, la larghezza
+    /// cambiava la misura. SwiftUI ci girava dentro finché il sistema non
+    /// chiudeva l'app — a metà della transizione fra le schede, che è quando
+    /// la mappa viene disegnata la prima volta.
     private var floorPlan: some View {
         ScrollView(.horizontal, showsIndicators: planColumns > 4) {
             LazyVStack(spacing: 0) {
@@ -282,7 +306,6 @@ struct GymMapView: View {
                 }
             }
             .padding(8)
-            .frame(width: planContentWidth)
         }
         .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
         .background {
@@ -294,12 +317,6 @@ struct GymMapView: View {
             RoundedRectangle(cornerRadius: Theme.rLg, style: .continuous)
                 .stroke(Theme.borderHi, lineWidth: 1.5)
         }
-        .background {
-            GeometryReader { proxy in
-                Color.clear.preference(key: PlanWidthKey.self, value: proxy.size.width)
-            }
-        }
-        .onPreferenceChange(PlanWidthKey.self) { planWidth = $0 }
     }
 
     // MARK: - Misure della pianta
@@ -321,10 +338,6 @@ struct GymMapView: View {
         return max(minimumCellWidth, available / CGFloat(planColumns))
     }
 
-    private var planContentWidth: CGFloat {
-        let gaps = 4 * CGFloat(max(0, planColumns - 2)) + (showsAisle ? 12 + aisleWidth : 0)
-        return planCellWidth * CGFloat(planColumns) + gaps + 16
-    }
 
     @ViewBuilder
     private var floorPlanHeader: some View {
@@ -347,7 +360,8 @@ struct GymMapView: View {
                 .frame(width: aisleWidth)
 
                 Text("LATO DESTRO")
-                    .frame(maxWidth: .infinity)
+                    .frame(width: planCellWidth * CGFloat(planColumns - leftColumns)
+                           + 4 * CGFloat(max(0, planColumns - leftColumns - 1)))
             }
             .font(.system(size: 8.5, weight: .bold))
             .tracking(0.65)

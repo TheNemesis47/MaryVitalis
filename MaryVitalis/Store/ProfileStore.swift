@@ -28,6 +28,7 @@ final class ProfileStore: ObservableObject {
         self.context = context
         Self.backfillInviteCodes(in: context)
         Self.collapseDuplicateLinks(in: context)
+        Self.collapseDuplicateGyms(in: context)
 
         let restored = SecureSessionStore.loadAccountID()
         let account = restored.flatMap { Self.account(id: $0, in: context) }
@@ -742,6 +743,30 @@ final class ProfileStore: ObservableObject {
             }
         }
         if removed { try? context.save() }
+    }
+
+    /// Due sedi con lo stesso identificativo non sono due sedi: sono la stessa
+    /// arrivata due volte dalla sincronizzazione. Se ne tiene una — quella con
+    /// più attrezzi, che è quella completa.
+    private static func collapseDuplicateGyms(in context: ModelContext) {
+        let gyms = (try? context.fetch(FetchDescriptor<Gym>())) ?? []
+        var best: [UUID: Gym] = [:]
+        var extra: [Gym] = []
+
+        for gym in gyms {
+            if let kept = best[gym.id] {
+                let (winner, loser) = (gym.equipment?.count ?? 0) > (kept.equipment?.count ?? 0)
+                    ? (gym, kept) : (kept, gym)
+                best[gym.id] = winner
+                extra.append(loser)
+            } else {
+                best[gym.id] = gym
+            }
+        }
+
+        guard !extra.isEmpty else { return }
+        for gym in extra { context.delete(gym) }
+        try? context.save()
     }
 
     private static func account(id: UUID, in context: ModelContext) -> UserAccount? {

@@ -251,18 +251,29 @@ final class CloudSync: ObservableObject {
         guard let documents = try? await FirebaseService.db.collection(FirestorePath.gyms)
             .whereField("ownerId", isEqualTo: ownerUID).getDocuments() else { return }
 
-        let known = Set((account.gyms ?? []).map(\.id))
         for document in documents.documents {
-            let payload = GymPayload(dictionary: document.data())
-            guard let id = (document.data()["id"] as? String).flatMap(UUID.init(uuidString:)),
-                  !known.contains(id) else { continue }
-            // Una sede è di chi ce l'ha: arrivata una volta, le modifiche
-            // successive sono sue. Si importa, non si sovrascrive — ma tenendo
-            // l'identificativo, altrimenti al giro dopo non la si riconosce e
-            // se ne crea un'altra copia, all'infinito.
-            payload.insert(owner: account, into: context, preservingID: true)
+            insertGymIfMissing(GymPayload(dictionary: document.data()), for: account)
         }
         try? context.save()
+    }
+
+    /// Inserisce la sede solo se non c'è già, controllando **adesso** invece
+    /// che su un elenco raccolto prima di un'attesa.
+    ///
+    /// Fra il controllo e l'inserimento si infila l'ascoltatore, che sta
+    /// guardando la stessa collezione: la sede arrivava due volte, con lo
+    /// stesso identificativo, e un elenco con due elementi identici è un guaio
+    /// per chi lo disegna. Capita proprio a chi riceve una sede da un trainer,
+    /// perché è l'unico caso in cui una sede arriva dal cloud.
+    private func insertGymIfMissing(_ payload: GymPayload, for account: UserAccount) {
+        guard let id = payload.sourceID else { return }
+        var descriptor = FetchDescriptor<Gym>(predicate: #Predicate { $0.id == id })
+        descriptor.fetchLimit = 1
+        guard (try? context.fetch(descriptor).first) == nil else { return }
+        // Una sede è di chi ce l'ha: arrivata una volta, le modifiche
+        // successive sono sue. Si importa, non si sovrascrive — ma tenendo
+        // l'identificativo, altrimenti al giro dopo non la si riconosce.
+        payload.insert(owner: account, into: context, preservingID: true)
     }
 
     private func pullSessions(ownerUID: String, account: UserAccount) async {
@@ -515,12 +526,9 @@ final class CloudSync: ObservableObject {
                 guard let self, let snapshot else { return }
                 Task { @MainActor in
                     guard let account = self.account(firebaseUID: uid) else { return }
-                    let known = Set((account.gyms ?? []).map(\.id))
                     for document in snapshot.documents {
-                        guard let id = (document.data()["id"] as? String)
-                            .flatMap(UUID.init(uuidString:)), !known.contains(id) else { continue }
-                        GymPayload(dictionary: document.data())
-                            .insert(owner: account, into: self.context, preservingID: true)
+                        self.insertGymIfMissing(GymPayload(dictionary: document.data()),
+                                                for: account)
                     }
                     try? self.context.save()
                     self.lastSync = Date()

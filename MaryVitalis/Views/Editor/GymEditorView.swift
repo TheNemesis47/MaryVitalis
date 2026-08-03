@@ -263,7 +263,16 @@ struct GymEditorView: View {
                 grid
             }
             .padding(18)
+            // La larghezza si misura sulla pagina, non sulla griglia: misurare
+            // quello di cui si decide la larghezza chiude un anello, e SwiftUI
+            // ci gira dentro finché il sistema non chiude l'app.
+            .background {
+                GeometryReader { proxy in
+                    Color.clear.preference(key: GridWidthKey.self, value: proxy.size.width)
+                }
+            }
         }
+        .onPreferenceChange(GridWidthKey.self) { gridWidth = $0 }
         .pageBackground()
         .navigationTitle("Modifica sede")
         .navigationBarTitleDisplayMode(.inline)
@@ -397,12 +406,6 @@ struct GymEditorView: View {
             }
         }
         .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
-        .background {
-            GeometryReader { proxy in
-                Color.clear.preference(key: GridWidthKey.self, value: proxy.size.width)
-            }
-        }
-        .onPreferenceChange(GridWidthKey.self) { gridWidth = $0 }
     }
 
     private var cellWidth: CGFloat {
