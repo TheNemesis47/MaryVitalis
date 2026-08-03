@@ -493,6 +493,31 @@ func run() async throws {
     check("la copia si porta dietro i passaggi",
           conPassaggi.orderedEquipment.contains(where: \.isWalkway))
 
+    print("\n[riuso e icone]")
+    let tapis = GymEquipment(name: "Tapis roulant", category: .cardio,
+                             gridRow: 3, gridColumn: 0,
+                             symbolName: "figure.run")
+    tapis.gym = sede
+    try context.save()
+    check("l'icona scelta vince su quella della categoria",
+          tapis.displaySymbol == "figure.run")
+    let senzaIcona = GymEquipment(name: "Anonimo", category: .forza,
+                                  gridRow: 3, gridColumn: 1)
+    check("senza scelta resta quella della categoria",
+          senzaIcona.displaySymbol == GymMachine.Category.forza.symbol)
+    // Dieci tapis sono un attrezzo da riusare, non dieci voci in elenco.
+    let tapisDue = GymEquipment(name: "Tapis roulant 2", category: .cardio,
+                                gridRow: 3, gridColumn: 2)
+    check("due esemplari sono lo stesso attrezzo",
+          tapis.reuseKey == tapisDue.reuseKey)
+    check("attrezzi diversi restano diversi",
+          tapis.reuseKey != senzaIcona.reuseKey)
+    check("l'icona arriva fino alla mappa",
+          sede.asLocation.machines.first { $0.name == "Tapis roulant" }?.symbolName == "figure.run")
+    context.delete(tapis)
+    context.delete(senzaIcona)
+    try context.save()
+
     print("\n[cancellazione della sede]")
     let daButtare = GymFactory.insertEmpty(named: "Sede di passaggio", owner: anna, into: context)
     try context.save()

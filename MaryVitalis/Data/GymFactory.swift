@@ -58,7 +58,8 @@ extension Gym {
                 muscles: item.muscles,
                 howTo: item.howTo,
                 tips: item.tips,
-                uncertain: item.uncertain
+                uncertain: item.uncertain,
+                symbolName: item.symbolName
             )
         }
 
@@ -145,6 +146,7 @@ extension GymFactory {
                 howTo: item.howTo,
                 tips: item.tips,
                 uncertain: item.uncertain,
+                symbolName: item.symbolName,
                 kind: item.cellKind
             )
             equipment.gym = copy

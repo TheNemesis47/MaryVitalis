@@ -489,6 +489,9 @@ final class GymEquipment {
     var tips: [String] = []
     /// `true` quando nemmeno il rilievo sapeva dire di che attrezzo si tratta.
     var uncertain: Bool = false
+    /// L'icona scelta a mano, quando l'attrezzo non è nel catalogo e quindi non
+    /// ha una sagoma disegnata. Vuota: si usa quella della categoria.
+    var symbolName: String?
     /// Cosa c'è in questa cella. Una sala non è fatta solo di macchine: i
     /// passaggi sono quello che la rende leggibile, e prima esisteva un solo
     /// corridoio, verticale, fisso in mezzo alla mappa.
@@ -507,6 +510,7 @@ final class GymEquipment {
          howTo: [String] = [],
          tips: [String] = [],
          uncertain: Bool = false,
+         symbolName: String? = nil,
          kind: GymCellKind = .equipment) {
         self.id = id
         self.catalogItemID = catalogItemID
@@ -519,6 +523,7 @@ final class GymEquipment {
         self.howTo = howTo
         self.tips = tips
         self.uncertain = uncertain
+        self.symbolName = symbolName
         self.kind = kind.rawValue
     }
 
@@ -533,6 +538,19 @@ final class GymEquipment {
     }
 
     var isWalkway: Bool { cellKind == .walkway }
+
+    /// L'icona da mostrare: quella scelta, o quella della categoria.
+    var displaySymbol: String { symbolName ?? machineCategory.symbol }
+
+    /// Due postazioni sono "lo stesso attrezzo" quando vengono dalla stessa
+    /// voce di catalogo, o quando hanno lo stesso nome a meno del numero
+    /// progressivo: "Tapis roulant 3" e "Tapis roulant 7" sono un tapis.
+    var reuseKey: String {
+        if let catalogItemID { return "catalogo:\(catalogItemID)" }
+        let base = name.replacingOccurrences(of: #"\s+\d+$"#, with: "",
+                                             options: .regularExpression)
+        return "nome:\(base.lowercased())"
+    }
 }
 
 /// Cosa occupa una cella della sala.

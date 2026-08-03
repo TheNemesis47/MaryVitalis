@@ -30,9 +30,20 @@ struct EquipmentPlanSymbol: View {
     }
 
     var body: some View {
-        Canvas(opaque: false, rendersAsynchronously: true) { context, size in
-            let frame = CGRect(origin: .zero, size: size).insetBy(dx: 2, dy: 2)
-            draw(style, in: frame, context: &context)
+        Group {
+            // Un attrezzo inventato da chi mappa la sala non ha una sagoma
+            // vista dall'alto: al posto di quella sbagliata, l'icona scelta.
+            if let symbol = machine.symbolName {
+                Image(systemName: symbol)
+                    .font(.system(size: 22, weight: .regular))
+                    .foregroundStyle(tint)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                Canvas(opaque: false, rendersAsynchronously: true) { context, size in
+                    let frame = CGRect(origin: .zero, size: size).insetBy(dx: 2, dy: 2)
+                    draw(style, in: frame, context: &context)
+                }
+            }
         }
         .accessibilityHidden(true)
     }

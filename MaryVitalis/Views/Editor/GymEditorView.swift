@@ -222,6 +222,7 @@ struct GymEditorView: View {
     @State private var removingEquipment: GymEquipment?
     @State private var dropTarget: Cell?
     @State private var gridWidth: CGFloat = 0
+    @State private var arranging = false
 
     private let minimumCellWidth: CGFloat = 78
 
@@ -254,12 +255,32 @@ struct GymEditorView: View {
                     .font(.headline)
                     .foregroundStyle(Theme.text)
 
-                Text("Tocca una cella vuota per metterci un attrezzo o un passaggio, toccane una piena per modificarla, e trascina per spostare: se nella cella di arrivo c'è già qualcosa, le due si scambiano di posto. Le celle vuote restano vuote: se in sala lì non c'è niente, la mappa lo rispecchia.")
+                Text("Tocca una cella vuota per metterci un attrezzo o un passaggio, toccane una piena per modificarla. Con **Sposta** trascini le postazioni: se nella cella di arrivo c'è già qualcosa, le due si scambiano di posto. Le celle vuote restano vuote: se in sala lì non c'è niente, la mappa lo rispecchia.")
                     .font(.footnote)
                     .foregroundStyle(Theme.textFaint)
                     .fixedSize(horizontal: false, vertical: true)
 
                 sizeControls
+
+                HStack {
+                    Text(arranging ? "Trascina le postazioni dove vuoi."
+                                   : "Tocca una cella per riempirla o modificarla.")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.textFaint)
+                    Spacer(minLength: 8)
+                    Button(arranging ? "Fine" : "Sposta") {
+                        withAnimation(.easeInOut(duration: 0.18)) { arranging.toggle() }
+                        Feedback.tap()
+                    }
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(arranging ? Color(hex: "#0a0f1a") : Theme.text)
+                    .padding(.horizontal, 14)
+                    .frame(minHeight: 34)
+                    .background(arranging ? Theme.defaultAccent : Theme.surface, in: Capsule())
+                    .overlay(Capsule().stroke(arranging ? .clear : Theme.border, lineWidth: 1))
+                    .buttonStyle(.plain)
+                }
+
                 grid
             }
             .padding(18)
@@ -279,7 +300,9 @@ struct GymEditorView: View {
         .onSettled([gym.name, gym.brand, gym.city]) { save() }
         .onDisappear { save() }
         .sheet(isPresented: $showPicker) {
-            EquipmentPickerSheet(onPickWalkway: { addWalkway() }) { machine in
+            EquipmentPickerSheet(existing: gym.orderedEquipment,
+                                 onPickWalkway: { addWalkway() },
+                                 onPickExisting: { duplicate($0) }) { machine in
                 addEquipment(from: machine)
             }
         }
@@ -420,7 +443,36 @@ struct GymEditorView: View {
         let column: Int
     }
 
+    /// Trascinare e toccare non possono convivere sulla stessa cella dentro
+    /// una vista che scorre: chi riconosce il trascinamento deve prima
+    /// aspettare di capire se il dito parte o resta, e quell'attesa si mangia
+    /// il primo tocco dopo uno scorrimento. Fuori dalla modalità "sposta" le
+    /// celle non hanno nessun riconoscitore di trascinamento, e il tocco arriva
+    /// al primo colpo.
+    @ViewBuilder
     private func cell(row: Int, column: Int, item: GymEquipment?) -> some View {
+        if arranging {
+            cellButton(row: row, column: column, item: item)
+                .draggable(item?.id.uuidString ?? "") {
+                    cellContent(item).frame(width: cellWidth).opacity(0.9)
+                }
+                .dropDestination(for: String.self) { payload, _ in
+                    move(payload.first, toRow: row, column: column)
+                } isTargeted: { targeted in
+                    dropTarget = targeted ? Cell(row: row, column: column) : nil
+                }
+                .overlay {
+                    if dropTarget == Cell(row: row, column: column) {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(Theme.defaultAccent, lineWidth: 2)
+                    }
+                }
+        } else {
+            cellButton(row: row, column: column, item: item)
+        }
+    }
+
+    private func cellButton(row: Int, column: Int, item: GymEquipment?) -> some View {
         Button {
             if let item {
                 if item.isWalkway {
@@ -437,23 +489,9 @@ struct GymEditorView: View {
             cellContent(item)
         }
         .buttonStyle(.plain)
-        // Trascinare è il modo naturale di spostare una postazione: prima
-        // bisognava aprirla e cambiare due contatori "riga" e "colonna",
-        // che è il contrario di guardare una piantina.
-        .draggable(item?.id.uuidString ?? "") {
-            cellContent(item).frame(width: cellWidth).opacity(0.9)
-        }
-        .dropDestination(for: String.self) { payload, _ in
-            move(payload.first, toRow: row, column: column)
-        } isTargeted: { targeted in
-            dropTarget = targeted ? Cell(row: row, column: column) : nil
-        }
-        .overlay {
-            if dropTarget == Cell(row: row, column: column) {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(Theme.defaultAccent, lineWidth: 2)
-            }
-        }
+        // In modalità "sposta" toccare non deve aprire niente: il dito serve a
+        // trascinare, e un foglio che si apre a metà gesto è solo un intoppo.
+        .disabled(arranging)
         .accessibilityLabel(accessibilityLabel(item, row: row, column: column))
     }
 
@@ -470,7 +508,7 @@ struct GymEditorView: View {
                     .stroke(Theme.borderHi, lineWidth: 1))
         } else if let item {
             VStack(spacing: 5) {
-                Image(systemName: item.machineCategory.symbol)
+                Image(systemName: item.displaySymbol)
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(item.machineCategory.color)
                 Text(item.name)
@@ -535,6 +573,42 @@ struct GymEditorView: View {
         Feedback.tap()
     }
 
+    /// Mette in sala un altro esemplare di un attrezzo che c'è già, con i suoi
+    /// muscoli e le sue istruzioni. Il nome prende un numero progressivo: due
+    /// postazioni identiche vanno distinte quando la scheda dice "vai lì".
+    private func duplicate(_ source: GymEquipment) {
+        let cell = targetCell ?? gym.firstFreeCell
+        let copy = GymEquipment(
+            catalogItemID: source.catalogItemID,
+            name: nextName(basedOn: source.name),
+            subtitle: source.subtitle,
+            category: source.machineCategory,
+            gridRow: cell.row,
+            gridColumn: cell.column,
+            muscles: source.muscles,
+            howTo: source.howTo,
+            tips: source.tips,
+            uncertain: source.uncertain,
+            symbolName: source.symbolName
+        )
+        copy.gym = gym
+        context.insert(copy)
+        save()
+        targetCell = nil
+        Feedback.success()
+    }
+
+    /// "Tapis roulant" → "Tapis roulant 2" → "Tapis roulant 3".
+    private func nextName(basedOn name: String) -> String {
+        let base = name.replacingOccurrences(of: #"\s+\d+$"#, with: "",
+                                             options: .regularExpression)
+        let taken = Set(gym.orderedEquipment.map(\.name))
+        guard taken.contains(base) else { return base }
+        var index = 2
+        while taken.contains("\(base) \(index)") { index += 1 }
+        return "\(base) \(index)"
+    }
+
     /// Un pezzo di corridoio. Occupa una cella come un attrezzo, così può
     /// andare anche di traverso: una sala ha i passaggi che ha, non uno solo
     /// verticale in mezzo.
@@ -574,7 +648,13 @@ struct GymEditorView: View {
 
 /// Scelta di un attrezzo dal catalogo di sistema.
 struct EquipmentPickerSheet: View {
+    /// Gli attrezzi che in questa sala ci sono già. Chi ne ha dieci uguali —
+    /// dieci tapis, sei panche — li ha descritti una volta: rifarli a mano uno
+    /// per uno, con muscoli e istruzioni, non è mappare una palestra, è
+    /// ricopiare.
+    var existing: [GymEquipment] = []
     var onPickWalkway: () -> Void = {}
+    var onPickExisting: (GymEquipment) -> Void = { _ in }
     var onPick: (GymMachine?) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -588,6 +668,21 @@ struct EquipmentPickerSheet: View {
                 || ($0.subtitle?.lowercased().contains(query) ?? false)
                 || $0.muscles.contains { $0.lowercased().contains(query) }
         }
+    }
+
+    /// Uno per nome: dieci tapis roulant sono un attrezzo da riusare, non dieci
+    /// voci in elenco.
+    private var reusable: [GymEquipment] {
+        let query = search.trimmingCharacters(in: .whitespaces).lowercased()
+        var seen: Set<String> = []
+        return existing
+            .filter { !$0.isWalkway }
+            .filter { seen.insert($0.reuseKey).inserted }
+            .filter { item in
+                query.isEmpty || item.name.lowercased().contains(query)
+                    || item.muscles.contains { $0.lowercased().contains(query) }
+            }
+            .sorted { $0.name < $1.name }
     }
 
     var body: some View {
@@ -611,6 +706,36 @@ struct EquipmentPickerSheet: View {
                     .listRowBackground(Theme.surface)
                 } footer: {
                     Text("Se in sala hai qualcosa che non è in elenco, aggiungilo tu con nome, muscoli e istruzioni. Il passaggio serve a disegnare i corridoi — anche di traverso.")
+                }
+
+                if !reusable.isEmpty {
+                    Section("Già in questa sala (\(reusable.count))") {
+                        ForEach(reusable, id: \.id) { item in
+                            Button {
+                                onPickExisting(item)
+                                dismiss()
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: item.displaySymbol)
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .foregroundStyle(item.machineCategory.color)
+                                        .frame(width: 36, height: 36)
+                                        .background(item.machineCategory.color.opacity(0.12), in: Circle())
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(item.name)
+                                            .font(.system(size: 15, weight: .semibold))
+                                            .foregroundStyle(Theme.text)
+                                            .multilineTextAlignment(.leading)
+                                        Text("Ne aggiunge un altro uguale")
+                                            .font(.caption)
+                                            .foregroundStyle(Theme.textFaint)
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .listRowBackground(Theme.surface)
+                        }
+                    }
                 }
 
                 Section("Catalogo (\(results.count))") {
@@ -712,6 +837,17 @@ struct EquipmentEditorSheet: View {
                     }
                 }
 
+                Section {
+                    IconPicker(selection: Binding(
+                        get: { equipment.symbolName },
+                        set: { equipment.symbolName = $0 }),
+                        tint: equipment.machineCategory.color)
+                } header: {
+                    Text("Icona")
+                } footer: {
+                    Text("Gli attrezzi del catalogo hanno una sagoma vista dall'alto. Per i tuoi, scegli un'icona: sulla mappa comparirà quella.")
+                }
+
                 Section("Muscoli allenati") {
                     ListEditor(items: Binding(get: { equipment.muscles },
                                               set: { equipment.muscles = $0 }),
@@ -771,6 +907,58 @@ struct EquipmentEditorSheet: View {
             }
         }
         .presentationBackground(Theme.bg)
+    }
+}
+
+/// Scelta dell'icona per un attrezzo fuori catalogo.
+struct IconPicker: View {
+    @Binding var selection: String?
+    var tint: Color = Theme.defaultAccent
+
+    private let columns = [GridItem(.adaptive(minimum: 46), spacing: 8)]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Button {
+                selection = nil
+                Feedback.tap()
+            } label: {
+                Label(selection == nil ? "Icona predefinita (in uso)" : "Usa quella predefinita",
+                      systemImage: selection == nil ? "checkmark.circle.fill" : "arrow.uturn.backward")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(selection == nil ? tint : Theme.textDim)
+            }
+            .buttonStyle(.plain)
+
+            ForEach(GymSymbols.groups) { group in
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(group.title.uppercased())
+                        .font(.system(size: 10, weight: .bold))
+                        .tracking(0.8)
+                        .foregroundStyle(Theme.textFaint)
+
+                    LazyVGrid(columns: columns, spacing: 8) {
+                        ForEach(group.symbols, id: \.self) { symbol in
+                            Button {
+                                selection = symbol
+                                Feedback.tap()
+                            } label: {
+                                Image(systemName: symbol)
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundStyle(selection == symbol ? Color(hex: "#0a0f1a") : tint)
+                                    .frame(width: 44, height: 44)
+                                    .background(selection == symbol ? tint : Theme.surfaceHi,
+                                                in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(symbol)
+                            .accessibilityAddTraits(selection == symbol ? .isSelected : [])
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
 

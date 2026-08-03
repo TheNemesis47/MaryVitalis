@@ -44,6 +44,9 @@ struct GymMachine: Identifiable, Hashable {
     let tips: [String]
     /// `true` quando la mappa originale segnalava l'attrezzo come non identificato.
     var uncertain: Bool = false
+    /// L'icona scelta a mano per un attrezzo che il catalogo non conosce: la
+    /// pianta disegna una sagoma vista dall'alto solo per quelli che conosce.
+    var symbolName: String?
 
     var center: CGPoint { CGPoint(x: rect.midX, y: rect.midY) }
 

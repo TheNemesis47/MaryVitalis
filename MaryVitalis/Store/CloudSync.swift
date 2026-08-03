@@ -811,6 +811,7 @@ struct GymPayload {
                     "howTo": item.howTo,
                     "tips": item.tips,
                     "uncertain": item.uncertain,
+                    "symbolName": item.symbolName as Any,
                     "kind": item.kind
                 ] as [String: Any]
             },
@@ -874,6 +875,7 @@ struct GymPayload {
                 howTo: raw["howTo"] as? [String] ?? [],
                 tips: raw["tips"] as? [String] ?? [],
                 uncertain: raw["uncertain"] as? Bool ?? false,
+                symbolName: raw["symbolName"] as? String,
                 kind: GymCellKind(rawValue: raw["kind"] as? String ?? "") ?? .equipment
             )
             equipment.gym = gym
