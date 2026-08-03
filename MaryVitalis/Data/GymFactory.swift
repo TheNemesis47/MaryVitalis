@@ -43,7 +43,10 @@ extension Gym {
         let step: CGFloat = 100
         let size: CGFloat = 90
 
-        let machines = orderedEquipment.filter { !$0.isWalkway }.map { item in
+        // Un solo riordinamento, non tre: `orderedEquipment` ordina a ogni
+        // chiamata, e qui serviva per attrezzi, posizioni e passaggi.
+        let items = orderedEquipment
+        let machines = items.filter { !$0.isWalkway }.map { item in
             GymMachine(
                 id: item.id.uuidString,
                 name: item.name,
@@ -74,12 +77,12 @@ extension Gym {
         }
 
         let placements = Dictionary(
-            orderedEquipment.filter { !$0.isWalkway }
+            items.filter { !$0.isWalkway }
                 .map { ($0.id.uuidString, GymPlacement(row: $0.gridRow, column: $0.gridColumn)) },
             uniquingKeysWith: { current, _ in current }
         )
 
-        let walkways = Set(orderedEquipment.filter(\.isWalkway)
+        let walkways = Set(items.filter(\.isWalkway)
             .map { GymPlacement(row: $0.gridRow, column: $0.gridColumn) })
 
         return GymLocation(id: id.uuidString, brand: brand, name: name,

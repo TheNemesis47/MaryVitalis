@@ -66,25 +66,43 @@ struct GymMapView: View {
     private let minimumCellWidth: CGFloat = 74
     private let aisleWidth: CGFloat = 44
 
-    /// Le sedi del profilo consultato, e nient'altro: la palestra di qualcun
-    /// altro non è un buon segnaposto per chi non ne ha ancora mappata una.
-    private var availableLocations: [GymLocation] {
+    /// Le sedi già tradotte per il disegno, costruite **una volta**.
+    ///
+    /// Erano una proprietà calcolata, e `gym` pure: ogni lettura ricostruiva
+    /// tutte le sedi e per ognuna riordinava gli attrezzi, confrontando
+    /// `gridRow` e `gridColumn` — che sono letture vere dal database. Il corpo
+    /// della vista le legge decine di volte, e `zone(for:)` una volta per
+    /// attrezzo: con una sala da cinquanta postazioni erano migliaia di letture
+    /// per un solo fotogramma, sul thread che disegna. Da lì gli otto secondi
+    /// per aprire una schermata, i tocchi che arrivavano dopo, e le
+    /// terminazioni durante il passaggio fra le schede.
+    @State private var locations: [GymLocation] = []
+
+    private var hasGyms: Bool { !locations.isEmpty }
+
+    private var gym: GymLocation {
+        locations.first { $0.id == selectedGymID } ?? locations.first ?? .none
+    }
+
+    /// Cambia quando cambia qualcosa che la mappa deve ridisegnare, e per
+    /// saperlo non costruisce niente: legge un identificativo, una data e un
+    /// conteggio.
+    private var gymsSignature: String {
+        (profile.viewedAccount?.gyms ?? [])
+            .map { "\($0.id)-\($0.updatedAt.timeIntervalSince1970)-\($0.equipment?.count ?? 0)" }
+            .sorted()
+            .joined(separator: "|")
+    }
+
+    private func rebuildLocations() {
         var seen: Set<String> = []
         // Un elenco con due elementi dello stesso identificativo è un guaio per
         // chi lo disegna, e una sincronizzazione andata storta può lasciarne
         // due: qui si passa una volta sola.
-        return (profile.viewedAccount?.gyms ?? [])
+        locations = (profile.viewedAccount?.gyms ?? [])
             .sorted { $0.sortIndex < $1.sortIndex }
             .map(\.asLocation)
             .filter { seen.insert($0.id).inserted }
-    }
-
-    private var hasGyms: Bool { !availableLocations.isEmpty }
-
-    private var gym: GymLocation {
-        availableLocations.first { $0.id == selectedGymID }
-            ?? availableLocations.first
-            ?? .none
     }
 
     private var accent: Color { highlight?.accent ?? Theme.defaultAccent }
@@ -138,6 +156,7 @@ struct GymMapView: View {
         .pageBackground()
         .navigationTitle("Mappa")
         .navigationBarTitleDisplayMode(.inline)
+        .task(id: gymsSignature) { rebuildLocations() }
         .searchable(text: $searchText, prompt: "Attrezzo o gruppo muscolare")
         .toolbar {
             if showsDismissButton {
@@ -185,7 +204,7 @@ struct GymMapView: View {
     private var locationHeader: some View {
         Menu {
             Picker("Palestra", selection: $selectedGymID) {
-                ForEach(availableLocations) { location in
+                ForEach(locations) { location in
                     Text(location.displayName).tag(location.id)
                 }
             }

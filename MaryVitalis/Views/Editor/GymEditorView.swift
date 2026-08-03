@@ -748,7 +748,13 @@ struct EquipmentEditorSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Fine") { try? context.save(); dismiss() }
+                    Button("Fine") {
+                        // Anche la sede risulta cambiata: è la sua data che
+                        // dice alla mappa che deve rifare i conti.
+                        gym.updatedAt = .now
+                        try? context.save()
+                        dismiss()
+                    }
                 }
             }
             // La cancellazione la esegue chi ha aperto il foglio, dopo che il
