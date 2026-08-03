@@ -402,6 +402,15 @@ func run() async throws {
     check("a chi non c'entra non arriva niente",
           HistoricRoutines.restore(for: estraneo, into: context) == nil)
 
+    // Chi la sua scheda ce l'ha già non ne vuole una seconda uguale.
+    let giaFornito = try profile.register(displayName: "Raffaele",
+                                          email: "raffaeleiommelli21@gmail.com",
+                                          password: "unapassword")
+    profile.createRoutine(named: "La mia", for: giaFornito)
+    check("chi ha già delle schede non ne riceve un'altra",
+          HistoricRoutines.restore(for: giaFornito, into: context) == nil)
+    check("e non gli si richiede più", giaFornito.hasSeenHistoricRoutine)
+
     print("\n[chi compare nella scelta del profilo]")
     // Il segnaposto di un'altra persona: è così che l'app rappresenta l'altra
     // metà di un collegamento. Non è un profilo di questo telefono, e senza
@@ -438,7 +447,18 @@ func run() async throws {
     let birreria = GymBirreria.insert(for: bea, into: context)
     try context.save()
     check("tutti gli attrezzi del rilievo hanno un posto",
-          birreria.orderedEquipment.count == GymBirreria.placements.count)
+          birreria.orderedEquipment.filter { !$0.isWalkway }.count
+            == GymBirreria.placements.count)
+    // Il corridoio non è più una riga di codice dentro la mappa: è una colonna
+    // di passaggi, come quelli che si mettono a mano.
+    check("il corridoio centrale è fatto di passaggi veri",
+          birreria.orderedEquipment.filter(\.isWalkway).count == GymBirreria.rows)
+    check("il corridoio sta nella colonna di mezzo",
+          birreria.orderedEquipment.filter(\.isWalkway)
+            .allSatisfy { $0.gridColumn == GymBirreria.walkwayColumn })
+    check("nessuna postazione finisce nel corridoio",
+          birreria.orderedEquipment.filter { !$0.isWalkway }
+            .allSatisfy { $0.gridColumn != GymBirreria.walkwayColumn })
     check("nessuna cella occupata due volte",
           Set(birreria.orderedEquipment.map { "\($0.gridRow)-\($0.gridColumn)" }).count
             == birreria.orderedEquipment.count)

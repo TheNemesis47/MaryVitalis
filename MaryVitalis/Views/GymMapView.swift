@@ -105,7 +105,23 @@ struct GymMapView: View {
             .filter { seen.insert($0.id).inserted }
     }
 
+    /// Cambia quando si chiede di tornare sulla postazione di adesso.
+    @State private var scrollRequest = UUID()
+    @State private var arrowBounce = false
+
     private var accent: Color { highlight?.accent ?? Theme.defaultAccent }
+
+    private var hereArrow: some View {
+        Image(systemName: "arrowshape.down.fill")
+            .font(.system(size: 16, weight: .bold))
+            .foregroundStyle(accent)
+            .shadow(color: .black.opacity(0.4), radius: 2, y: 1)
+            .offset(y: arrowBounce ? -26 : -34)
+            .animation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true),
+                       value: arrowBounce)
+            .onAppear { arrowBounce = true }
+            .accessibilityHidden(true)
+    }
     private let nextAccent = Color(hex: "#f59e0b")
     private let completedAccent = Color(hex: "#64748b")
 
@@ -145,11 +161,27 @@ struct GymMapView: View {
             }
             .onPreferenceChange(PlanWidthKey.self) { planWidth = $0 }
             .scrollDismissesKeyboard(.interactively)
+            // Le righe della pianta si costruiscono a mano a mano che
+            // servono: al primo tentativo quella cercata spesso non esiste
+            // ancora, e lo scorrimento non andava da nessuna parte — bisognava
+            // scendere a mano cercando "ORA". Ci si prova tre volte.
             .task(id: scrollTargetRowID) {
                 guard let rowID = scrollTargetRowID else { return }
-                try? await Task.sleep(nanoseconds: 250_000_000)
-                withAnimation(.easeInOut(duration: 0.28)) {
-                    proxy.scrollTo(rowID, anchor: .center)
+                for delay in [250, 400, 700] {
+                    try? await Task.sleep(for: .milliseconds(delay))
+                    guard !Task.isCancelled else { return }
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        // Verticale al centro, orizzontale a sinistra: la
+                        // richiesta attraversa anche la vista che scorre di
+                        // lato, e centrandola lì la sala restava tagliata.
+                        proxy.scrollTo(rowID, anchor: UnitPoint(x: 0, y: 0.5))
+                    }
+                }
+            }
+            .onChange(of: scrollRequest) { _, _ in
+                guard let rowID = scrollTargetRowID else { return }
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    proxy.scrollTo(rowID, anchor: UnitPoint(x: 0, y: 0.5))
                 }
             }
         }
@@ -315,28 +347,49 @@ struct GymMapView: View {
     /// chiudeva l'app — a metà della transizione fra le schede, che è quando
     /// la mappa viene disegnata la prima volta.
     private var floorPlan: some View {
-        ScrollView(.horizontal, showsIndicators: planColumns > 4) {
-            LazyVStack(spacing: 0) {
-                floorPlanHeader
-
-                ForEach(Array(spatialFloorRows.enumerated()), id: \.element.id) { index, row in
-                    floorRow(row, index: index)
-                        .id(row.id)
+        ZStack(alignment: .top) {
+            // Le ancore dello scorrimento verticale stanno **fuori** dalla
+            // vista che scorre di lato. Dentro, la richiesta di "portami lì"
+            // veniva raccolta da quella: la sala si spostava in orizzontale e
+            // non scendeva di una riga, e bisognava cercare a mano.
+            VStack(spacing: 0) {
+                Color.clear.frame(height: 8 + planHeaderHeight)
+                ForEach(spatialFloorRows) { row in
+                    Color.clear
+                        .frame(height: row.height)
+                        .id(anchorID(row.id))
                 }
             }
-            .padding(8)
-        }
-        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
-        .background {
-            FloorTexture()
-                .background(Color(hex: "#101827"))
-        }
-        .clipShape(RoundedRectangle(cornerRadius: Theme.rLg, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: Theme.rLg, style: .continuous)
-                .stroke(Theme.borderHi, lineWidth: 1.5)
+            .allowsHitTesting(false)
+
+            ScrollView(.horizontal, showsIndicators: planColumns > 4) {
+                LazyVStack(spacing: 0) {
+                    floorPlanHeader
+
+                    ForEach(Array(spatialFloorRows.enumerated()), id: \.element.id) { index, row in
+                        floorRow(row, index: index)
+                    }
+                }
+                .padding(8)
+            }
+            .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+            .background {
+                FloorTexture()
+                    .background(Color(hex: "#101827"))
+            }
+            .clipShape(RoundedRectangle(cornerRadius: Theme.rLg, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: Theme.rLg, style: .continuous)
+                    .stroke(Theme.borderHi, lineWidth: 1.5)
+            }
         }
     }
+
+    /// L'altezza dell'intestazione "lato sinistro / corridoio / lato destro",
+    /// che esiste solo per le sale senza passaggi propri.
+    private var planHeaderHeight: CGFloat { showsAisle ? 38 : 0 }
+
+    private func anchorID(_ rowID: String) -> String { "anchor-" + rowID }
 
     // MARK: - Misure della pianta
 
@@ -500,6 +553,12 @@ struct GymMapView: View {
                 ZStack(alignment: .topTrailing) {
                     EquipmentPlanSymbol(machine: machine, tint: iconTint)
                         .frame(width: 50, height: 50)
+                        // La freccia che scende sulla postazione di adesso: in
+                        // una sala da cinquanta attrezzi il bordo colorato da
+                        // solo non si trova, ci vuole qualcosa che si muove.
+                        .overlay(alignment: .top) {
+                            if isCurrent { hereArrow }
+                        }
 
                         .shadow(color: Color.black.opacity(0.24), radius: 2, y: 2)
 
@@ -568,9 +627,10 @@ struct GymMapView: View {
     private var scrollTargetRowID: String? {
         let machineID = focus?.id ?? highlight?.current?.machines.first?.id
         guard let machineID else { return nil }
-        return spatialFloorRows.first { row in
+        guard let row = spatialFloorRows.first(where: { row in
             row.machines.contains { $0?.id == machineID }
-        }?.id
+        }) else { return nil }
+        return anchorID(row.id)
     }
 
     /// La pianta, riga per riga, così com'è stata disegnata nell'editor.
@@ -674,12 +734,33 @@ struct GymMapView: View {
     // MARK: - Allenamento
 
     private func highlightBanner(_ highlight: MapHighlight) -> some View {
-        HStack(spacing: 8) {
-            if let current = highlight.current {
-                banner(tag: "ORA", item: current, color: accent, filled: true)
+        VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                if let current = highlight.current {
+                    banner(tag: "ORA", item: current, color: accent, filled: true)
+                }
+                if let next = highlight.next {
+                    banner(tag: "POI", item: next, color: nextAccent, filled: false)
+                }
             }
-            if let next = highlight.next {
-                banner(tag: "POI", item: next, color: nextAccent, filled: false)
+
+            // Se lo scorrimento automatico non basta — una sala lunga, un
+            // ritorno sulla mappa dopo aver guardato altro — ci si torna con
+            // un tocco invece di cercare a occhio.
+            if highlight.current != nil {
+                Button {
+                    scrollRequest = UUID()
+                    Feedback.tap()
+                } label: {
+                    Label("Portami all'attrezzo di adesso", systemImage: "location.circle.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(accent)
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: 38)
+                        .background(accent.opacity(0.12), in: Capsule())
+                        .overlay(Capsule().stroke(accent.opacity(0.35), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
             }
         }
     }

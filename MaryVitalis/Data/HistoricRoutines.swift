@@ -33,6 +33,15 @@ enum HistoricRoutines {
         // scheda, e chi l'ha già ricevuta e poi cancellata non se la ritrova.
         guard !account.hasSeenHistoricRoutine else { return nil }
 
+        // E chi le sue schede ce le ha già — perché non le ha mai perse, o
+        // perché gliele ha scritte il trainer — non ne vuole una in più: la
+        // scheda storica serve a chi arriva con il profilo vuoto.
+        guard account.orderedRoutines.isEmpty else {
+            account.hasSeenHistoricRoutine = true
+            try? context.save()
+            return nil
+        }
+
         let inserted = RoutineFactory.insert(seed: seed,
                                              named: name,
                                              owner: account,

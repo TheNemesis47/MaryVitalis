@@ -19,7 +19,12 @@ enum GymBirreria {
     static let brand = "FitActive"
     static let name = "La Birreria"
     static let city = "Napoli"
-    static let columns = 4
+    static let columns = 6
+    /// La terza colonna è il corridoio centrale della sala. Prima era una
+    /// riga di codice dentro la mappa — un corridoio fisso, disegnato lì
+    /// perché così era fatta questa palestra. Adesso è quello che è: una
+    /// colonna di passaggi come quelli che si mettono a mano.
+    static let walkwayColumn = 2
     static let rows = 21
 
     struct Cell {
@@ -38,59 +43,59 @@ enum GymBirreria {
 
     /// [id dell'attrezzo nel catalogo: posizione in sala] — 53 attrezzi.
     static let placements: [String: Cell] = [
-        "pedana-vibrante": Cell(row: 0, column: 2),
+        "pedana-vibrante": Cell(row: 0, column: 3),
         "leg-press": Cell(row: 1, column: 0),
         "area-corpo-libero": Cell(row: 1, column: 1),
-        "panca-declinata-1": Cell(row: 1, column: 2),
-        "panca-declinata-2": Cell(row: 1, column: 3),
+        "panca-declinata-1": Cell(row: 1, column: 3),
+        "panca-declinata-2": Cell(row: 1, column: 4),
         "hack-squat": Cell(row: 2, column: 1),
-        "rear-delt-pec-fly": Cell(row: 2, column: 3),
+        "rear-delt-pec-fly": Cell(row: 2, column: 4),
         "prone-leg-curl": Cell(row: 3, column: 0),
         "glute": Cell(row: 3, column: 1),
-        "seated-row": Cell(row: 3, column: 2),
+        "seated-row": Cell(row: 3, column: 3),
         "matrix-da-identificare": Cell(row: 4, column: 0),
         "leg-curl-extension": Cell(row: 4, column: 1),
-        "lateral-raise-1": Cell(row: 4, column: 2),
-        "diverging-seated-row": Cell(row: 4, column: 3),
-        "cardio-non-identificato": Cell(row: 5, column: 3),
+        "lateral-raise-1": Cell(row: 4, column: 3),
+        "diverging-seated-row": Cell(row: 4, column: 4),
+        "cardio-non-identificato": Cell(row: 5, column: 4),
         "hip-adductor-abductor": Cell(row: 6, column: 1),
-        "lateral-raise-2": Cell(row: 6, column: 2),
-        "converging-chest-press": Cell(row: 6, column: 3),
+        "lateral-raise-2": Cell(row: 6, column: 3),
+        "converging-chest-press": Cell(row: 6, column: 4),
         "dip-chin-assist": Cell(row: 7, column: 0),
         "decline-press": Cell(row: 7, column: 1),
-        "chest-incline-shoulder-press": Cell(row: 7, column: 2),
-        "abdominal-crunch": Cell(row: 7, column: 3),
-        "stepmill": Cell(row: 8, column: 3),
+        "chest-incline-shoulder-press": Cell(row: 7, column: 3),
+        "abdominal-crunch": Cell(row: 7, column: 4),
+        "stepmill": Cell(row: 8, column: 4),
         "low-row": Cell(row: 9, column: 1),
-        "diverging-lat-pulldown": Cell(row: 9, column: 2),
-        "tapis-1": Cell(row: 9, column: 3),
+        "diverging-lat-pulldown": Cell(row: 9, column: 3),
+        "tapis-1": Cell(row: 9, column: 4),
         "lat-pulldown-2": Cell(row: 10, column: 0),
         "adjustable-pulley-1": Cell(row: 10, column: 1),
-        "colonna-multi-4": Cell(row: 10, column: 2),
-        "adjustable-pulley-2": Cell(row: 10, column: 3),
-        "cyclette-1": Cell(row: 11, column: 2),
-        "tapis-2": Cell(row: 11, column: 3),
+        "colonna-multi-4": Cell(row: 10, column: 3),
+        "adjustable-pulley-2": Cell(row: 10, column: 4),
+        "cyclette-1": Cell(row: 11, column: 3),
+        "tapis-2": Cell(row: 11, column: 4),
         "lat-pulldown": Cell(row: 12, column: 1),
-        "cyclette-2": Cell(row: 12, column: 2),
-        "tapis-3": Cell(row: 12, column: 3),
+        "cyclette-2": Cell(row: 12, column: 3),
+        "tapis-3": Cell(row: 12, column: 4),
         "adjustable-pulley-3": Cell(row: 13, column: 1),
-        "cyclette-3": Cell(row: 13, column: 2),
-        "tapis-4": Cell(row: 13, column: 3),
+        "cyclette-3": Cell(row: 13, column: 3),
+        "tapis-4": Cell(row: 13, column: 4),
         "colonna-multi-2": Cell(row: 14, column: 1),
-        "cyclette-4": Cell(row: 14, column: 2),
+        "cyclette-4": Cell(row: 14, column: 3),
         "adjustable-pulley-4": Cell(row: 15, column: 1),
-        "cyclette-5": Cell(row: 15, column: 2),
-        "tapis-5": Cell(row: 15, column: 3),
-        "rematore": Cell(row: 16, column: 2),
-        "tapis-6": Cell(row: 16, column: 3),
+        "cyclette-5": Cell(row: 15, column: 3),
+        "tapis-5": Cell(row: 15, column: 4),
+        "rematore": Cell(row: 16, column: 3),
+        "tapis-6": Cell(row: 16, column: 4),
         "manubri": Cell(row: 17, column: 0),
         "panche": Cell(row: 17, column: 1),
-        "ellittica-1": Cell(row: 17, column: 2),
-        "tapis-7": Cell(row: 17, column: 3),
-        "ellittica-2": Cell(row: 18, column: 2),
-        "tapis-8": Cell(row: 18, column: 3),
-        "tapis-9": Cell(row: 19, column: 3),
-        "tapis-10": Cell(row: 20, column: 3),
+        "ellittica-1": Cell(row: 17, column: 3),
+        "tapis-7": Cell(row: 17, column: 4),
+        "ellittica-2": Cell(row: 18, column: 3),
+        "tapis-8": Cell(row: 18, column: 4),
+        "tapis-9": Cell(row: 19, column: 4),
+        "tapis-10": Cell(row: 20, column: 4),
     ]
 
     static let zones: [Zone] = [
@@ -138,6 +143,14 @@ enum GymBirreria {
             )
             item.gym = gym
             context.insert(item)
+        }
+
+        for row in 0..<rows {
+            let passage = GymEquipment(name: "Passaggio", category: .altro,
+                                       gridRow: row, gridColumn: walkwayColumn,
+                                       kind: .walkway)
+            passage.gym = gym
+            context.insert(passage)
         }
 
         for zone in zones {
