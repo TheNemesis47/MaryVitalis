@@ -10,7 +10,13 @@ struct GymListView: View {
     @AppStorage("mv:selected-gym") private var selectedGymID = ""
 
     @State private var editing: Gym?
-    @State private var deleting: Gym?
+    /// Identificativo e nome, mai la sede: vedi `RoutinesView.PendingDeletion`.
+    @State private var deleting: PendingDeletion?
+
+    struct PendingDeletion: Identifiable {
+        let id: UUID
+        let name: String
+    }
     @State private var sharing: Gym?
     @State private var assigning: Gym?
     @State private var showImport = false
@@ -85,13 +91,16 @@ struct GymListView: View {
                 ImportGymSheet(owner: owner).environmentObject(profile)
             }
         }
-        .alert("Eliminare \(deleting?.displayName ?? "")?",
+        .alert("Eliminare \(deleting?.name ?? "")?",
                isPresented: Binding(get: { deleting != nil },
                                     set: { if !$0 { deleting = nil } })) {
             Button("Annulla", role: .cancel) { deleting = nil }
             Button("Elimina", role: .destructive) {
-                if let deleting { profile.delete(deleting) }
+                let target = deleting?.id
                 deleting = nil
+                if let target, let gym = gyms.first(where: { $0.id == target }) {
+                    profile.delete(gym)
+                }
                 Feedback.tap()
             }
         } message: {
@@ -176,7 +185,9 @@ struct GymListView: View {
                 }
             }
         }
-        Button(role: .destructive) { deleting = gym } label: {
+        Button(role: .destructive) {
+            deleting = PendingDeletion(id: gym.id, name: gym.displayName)
+        } label: {
             Label("Elimina", systemImage: "trash")
         }
     }
@@ -208,6 +219,7 @@ struct GymEditorView: View {
     @State private var targetCell: (row: Int, column: Int)?
     @State private var editingEquipment: GymEquipment?
     @State private var removingWalkway: GymEquipment?
+    @State private var removingEquipment: GymEquipment?
     @State private var dropTarget: Cell?
     @State private var gridWidth: CGFloat = 0
 
@@ -278,9 +290,12 @@ struct GymEditorView: View {
             Text("La cella torna vuota. Puoi rimetterci un attrezzo o un altro passaggio.")
         }
         .sheet(isPresented: Binding(get: { editingEquipment != nil },
-                                    set: { if !$0 { editingEquipment = nil } })) {
+                                    set: { if !$0 { editingEquipment = nil } }),
+               onDismiss: removePendingEquipment) {
             if let editingEquipment {
-                EquipmentEditorSheet(equipment: editingEquipment, gym: gym)
+                EquipmentEditorSheet(equipment: editingEquipment, gym: gym) { item in
+                    removingEquipment = item
+                }
             }
         }
     }
@@ -508,6 +523,15 @@ struct GymEditorView: View {
         return true
     }
 
+    private func removePendingEquipment() {
+        guard let removingEquipment else { return }
+        removingEquipment.gym = nil
+        context.delete(removingEquipment)
+        save()
+        self.removingEquipment = nil
+        Feedback.tap()
+    }
+
     /// Un pezzo di corridoio. Occupa una cella come un attrezzo, così può
     /// andare anche di traverso: una sala ha i passaggi che ha, non uno solo
     /// verticale in mezzo.
@@ -635,6 +659,9 @@ struct EquipmentPickerSheet: View {
 struct EquipmentEditorSheet: View {
     @Bindable var equipment: GymEquipment
     let gym: Gym
+    /// Chiede a chi ha aperto il foglio di togliere l'attrezzo, a chiusura
+    /// avvenuta. Vedi il commento sull'avviso qui sotto.
+    var onRemove: (GymEquipment) -> Void = { _ in }
 
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
@@ -721,12 +748,15 @@ struct EquipmentEditorSheet: View {
                     Button("Fine") { try? context.save(); dismiss() }
                 }
             }
+            // La cancellazione la esegue chi ha aperto il foglio, dopo che il
+            // foglio si è chiuso: cancellare qui vorrebbe dire distruggere
+            // l'attrezzo mentre questa stessa schermata ne sta leggendo il nome
+            // per scrivere il titolo, e toccare un modello distrutto termina
+            // il processo.
             .alert("Togliere \(equipment.name)?", isPresented: $confirmDelete) {
                 Button("Annulla", role: .cancel) {}
                 Button("Togli", role: .destructive) {
-                    equipment.gym = nil
-                    context.delete(equipment)
-                    try? context.save()
+                    onRemove(equipment)
                     dismiss()
                 }
             }

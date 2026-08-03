@@ -33,6 +33,12 @@ private struct EquipmentFloorRow: Identifiable {
     /// Le colonne che in questa riga sono passaggio.
     var walkways: Set<Int> = []
     let height: CGFloat
+
+    /// Accesso a prova di riga costruita quando la sala aveva un'altra
+    /// larghezza: fuori dai bordi si disegna una cella vuota, non si esce.
+    func machine(at column: Int) -> GymMachine? {
+        machines.indices.contains(column) ? machines[column] : nil
+    }
 }
 
 /// Piantina verticale degli attrezzi della palestra.
@@ -365,7 +371,7 @@ struct GymMapView: View {
         return HStack(spacing: 6) {
             HStack(spacing: 4) {
                 ForEach(0..<split, id: \.self) { column in
-                    machineSlot(row.machines[column], column: column,
+                    machineSlot(row.machine(at: column), column: column,
                                 isWalkway: row.walkways.contains(column))
                         .frame(width: planCellWidth)
                 }
@@ -378,7 +384,7 @@ struct GymMapView: View {
 
             HStack(spacing: 4) {
                 ForEach(split..<count, id: \.self) { column in
-                    machineSlot(row.machines[column], column: column,
+                    machineSlot(row.machine(at: column), column: column,
                                 isWalkway: row.walkways.contains(column))
                         .frame(width: planCellWidth)
                 }

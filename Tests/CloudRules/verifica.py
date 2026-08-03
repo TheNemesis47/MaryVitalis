@@ -220,8 +220,17 @@ try:
                {"fields": {"ownerId": s(client_id), "name": s("Manomessa")}})
     check("un estraneo NON scrive la scheda", st == 403)
 
+    st, _ = fs("DELETE", f"routines/{routine}", other_tok)
+    check("un estraneo NON cancella la scheda", st == 403)
+
+    # Il trainer sì: può già riscriverne il contenuto, vietargli la
+    # cancellazione lasciava solo schede sbagliate che nessuno poteva togliere.
     st, _ = fs("DELETE", f"routines/{routine}", trainer_tok)
-    check("il trainer NON può cancellare la scheda del cliente", st == 403)
+    check("il trainer può cancellare la scheda che ha scritto", st == 200)
+
+    # Rimessa: serve alle prove che vengono dopo.
+    st, _ = fs("PATCH", f"routines/{routine}", trainer_tok, payload)
+    check("e può riscriverla", st == 200)
 
     print("\n[palestre condivise]")
     gym_private = "aaaa1111-0000-0000-0000-000000000001"

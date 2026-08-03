@@ -154,8 +154,13 @@ service cloud.firestore {
       allow create: if isSelfOrAcceptedTrainer(request.resource.data.ownerId);
       allow update: if isSelfOrAcceptedTrainer(resource.data.ownerId)
         && request.resource.data.ownerId == resource.data.ownerId;
-      // Cancellare la scheda di qualcun altro no: al massimo si smette di seguirlo.
-      allow delete: if isSelf(resource.data.ownerId);
+
+      // Anche cancellare. Vietarlo sembrava prudenza e non lo era: chi può
+      // riscrivere il documento intero — e il trainer può — è già in grado di
+      // svuotare la scheda, solo in modo più goffo. Nel frattempo un trainer
+      // che sbagliava scheda restava senza modo di toglierla: spariva dal suo
+      // telefono e tornava alla sincronizzazione successiva.
+      allow delete: if isSelfOrAcceptedTrainer(resource.data.ownerId);
     }
 
     // ---------- Storico e progressi ----------

@@ -5,7 +5,17 @@ struct RoutinesView: View {
     @EnvironmentObject private var profile: ProfileStore
 
     @State private var editing: Routine?
-    @State private var deleting: Routine?
+    /// Solo identificativo e nome, mai la scheda.
+    ///
+    /// Cancellare un modello SwiftData e poi rileggerlo — anche solo per
+    /// scrivere il titolo dell'avviso — termina il processo. L'avviso resta
+    /// aperto un istante dopo la cancellazione, e quell'istante bastava.
+    @State private var deleting: PendingDeletion?
+
+    struct PendingDeletion: Identifiable {
+        let id: UUID
+        let name: String
+    }
 
     /// La scheda appartiene al profilo consultato: è così che un trainer ne
     /// costruisce una per un cliente e il cliente se la ritrova.
@@ -129,8 +139,14 @@ struct RoutinesView: View {
                                     set: { if !$0 { deleting = nil } })) {
             Button("Annulla", role: .cancel) { deleting = nil }
             Button("Elimina", role: .destructive) {
-                if let deleting { profile.delete(deleting) }
+                // Prima si chiude l'avviso, poi si cancella: al contrario la
+                // vista rileggerebbe una scheda che non esiste più.
+                let target = deleting?.id
                 deleting = nil
+                if let target,
+                   let routine = profile.visibleRoutines.first(where: { $0.id == target }) {
+                    profile.delete(routine)
+                }
                 Feedback.tap()
             }
         } message: {
@@ -173,7 +189,9 @@ struct RoutinesView: View {
         } label: {
             Label("Duplica", systemImage: "doc.on.doc")
         }
-        Button(role: .destructive) { deleting = routine } label: {
+        Button(role: .destructive) {
+            deleting = PendingDeletion(id: routine.id, name: routine.name)
+        } label: {
             Label("Elimina", systemImage: "trash")
         }
     }
