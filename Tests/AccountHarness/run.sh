@@ -24,13 +24,13 @@ swiftc -parse-as-library \
   "$P/Data/SeedRoutines.swift" \
   "$P/Data/RoutineFactory.swift" "$P/Data/GymFactory.swift" "$P/Data/InviteCode.swift" \
   "$P/Data/GymBirreria.swift" "$P/Data/HistoricRoutines.swift" \
-  "$P/Model/GymMachine.swift" \
+  "$P/Model/GymMachine.swift" "$P/Model/Exercise.swift" \
   "$P/Model/UserRole.swift" \
   "$P/Model/Routine.swift" "$P/Model/GymLocation.swift" "$P/Model/EquipmentIcon.swift" "$P/Model/GymMapData.swift" \
   "$P/Store/CredentialStore.swift" \
   "$P/Store/SecureSessionStore.swift" \
   "$P/Store/AppleSignIn.swift" \
-  "$P/Store/ProfileStore.swift" "$P/Store/RoutineEditing.swift" "$P/Store/GymSharing.swift" \
+  "$P/Store/ProfileStore.swift" "$P/Store/RoutineEditing.swift" "$P/Store/GymSharing.swift" "$P/Store/EquipmentAvailability.swift" \
   Harness.swift \
   -o "$OUT/harness"
 

@@ -7,15 +7,24 @@ struct ExercisePickerView: View {
     var onPick: (Exercise) -> Void
 
     @EnvironmentObject private var library: ExerciseLibrary
+    @EnvironmentObject private var profile: ProfileStore
     @Environment(\.dismiss) private var dismiss
 
     @State private var search = ""
     @State private var bodyPart = ""
     @State private var target = ""
     @State private var equipment = ""
+    @State private var onlyMine = false
 
     private var results: [Exercise] {
-        library.filter(search: search, bodyPart: bodyPart, target: target, equipment: equipment)
+        let all = library.filter(search: search, bodyPart: bodyPart,
+                                 target: target, equipment: equipment)
+        // "Attrezzo" qui sopra è come lo chiama il database — bilanciere, cavo,
+        // macchina. Questo invece è quello che c'è **in sala**: scrivere una
+        // scheda con un attrezzo che non si ha è il modo più veloce per farla
+        // saltare al primo allenamento.
+        guard onlyMine, profile.hasMappedEquipment else { return all }
+        return all.filter(profile.canPerform)
     }
 
     /// Il database ha 1324 voci: mostrarle tutte insieme non serve a nessuno e
@@ -82,6 +91,16 @@ struct ExercisePickerView: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
+                    if profile.hasMappedEquipment {
+                        Button {
+                            onlyMine.toggle()
+                            Feedback.tap()
+                        } label: {
+                            Chip(label: onlyMine ? "✓ Solo i miei attrezzi" : "Solo i miei attrezzi",
+                                 active: onlyMine, accent: accent)
+                        }
+                        .buttonStyle(.plain)
+                    }
                     FilterMenu(title: "Distretto", all: "Tutti i distretti",
                                options: library.bodyParts, selection: $bodyPart)
                     FilterMenu(title: "Muscolo", all: "Tutti i muscoli",

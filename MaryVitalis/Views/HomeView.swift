@@ -36,6 +36,7 @@ struct HomeView: View {
             SettingsView()
                 .environmentObject(profile)
                 .environmentObject(store)
+                .environmentObject(library)
         }
     }
 

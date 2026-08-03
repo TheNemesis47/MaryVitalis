@@ -73,6 +73,7 @@ struct DayEditorView: View {
                 Feedback.success()
             }
             .environmentObject(library)
+            .environmentObject(profile)
         }
         .sheet(isPresented: Binding(get: { editing != nil },
                                     set: { if !$0 { editing = nil } })) {

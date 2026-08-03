@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject private var profile: ProfileStore
     @EnvironmentObject private var store: WorkoutStore
+    @EnvironmentObject private var library: ExerciseLibrary
     @Environment(\.dismiss) private var dismiss
 
     @State private var showPasswordSheet = false
@@ -44,6 +45,40 @@ struct SettingsView: View {
                             ClientsSection(trainer: account)
                         }
                     }
+
+                    // Gli attrezzi hanno una pagina propria: sono un elenco
+                    // che cresce, e un elenco che cresce dentro una pagina di
+                    // impostazioni diventa illeggibile.
+                    NavigationLink {
+                        MyEquipmentView()
+                            .environmentObject(profile)
+                            .environmentObject(library)
+                    } label: {
+                        Panel(padding: 15, radius: Theme.rLg) {
+                            HStack(spacing: 13) {
+                                Image(systemName: "dumbbell.fill")
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundStyle(accent)
+                                    .frame(width: 38, height: 38)
+                                    .background(accent.opacity(0.12), in: Circle())
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("I miei attrezzi")
+                                        .font(.system(size: 15.5, weight: .semibold))
+                                        .foregroundStyle(Theme.text)
+                                    Text(profile.hasMappedEquipment
+                                         ? "\(profile.equipmentCatalog.count) tipi · filtrano gli esercizi"
+                                         : "Nessuno: mappa la tua palestra")
+                                        .font(.caption)
+                                        .foregroundStyle(Theme.textFaint)
+                                }
+                                Spacer(minLength: 8)
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundStyle(Theme.textFaint)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
 
                     restSection
                     widgetSection

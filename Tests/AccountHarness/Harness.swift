@@ -544,6 +544,16 @@ func run() async throws {
     context.delete(senzaIcona)
     try context.save()
 
+    print("\n[il catalogo personale]")
+    // Gli attrezzi di una persona sono quelli che ha messo nelle sue sedi.
+    check("il catalogo raccoglie le postazioni", !profile.equipmentCatalog.isEmpty)
+    check("una voce per tipo, non una per esemplare",
+          profile.equipmentCatalog.count <= profile.myEquipment.count)
+    check("i passaggi non sono attrezzi",
+          profile.myEquipment.allSatisfy { !$0.isWalkway })
+    check("le voci di catalogo sono note",
+          !profile.availableCatalogIDs.isEmpty)
+
     print("\n[cancellazione della sede]")
     let daButtare = GymFactory.insertEmpty(named: "Sede di passaggio", owner: anna, into: context)
     try context.save()
